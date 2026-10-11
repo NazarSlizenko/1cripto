@@ -87,14 +87,14 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search date (e.g. 2026-10)..."
+              placeholder="Поиск по дате (например 2026-10)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-slate-950 border border-slate-800 text-xs text-slate-200 pl-8 pr-3 py-1.5 rounded-lg focus:outline-hidden focus:border-cyan-500"
             />
           </div>
           <span className="text-xs text-slate-400 font-mono">
-            {filteredData.length} records loaded
+            {filteredData.length} записей загружено
           </span>
         </div>
 
@@ -103,7 +103,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
         >
           <Download className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Export CSV Dataset</span>
+          <span>Экспорт датасета в CSV</span>
         </button>
       </div>
 
@@ -113,16 +113,16 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
           <table className="w-full text-xs font-mono tabular-nums">
             <thead className="sticky top-0 bg-slate-950/95 backdrop-blur-xs border-b border-slate-800">
               <tr className="text-slate-400 text-left">
-                <th className="py-2.5 px-3 font-medium">Timestamp (UTC)</th>
-                <th className="py-2.5 px-3 font-medium text-right">Open</th>
-                <th className="py-2.5 px-3 font-medium text-right">High</th>
-                <th className="py-2.5 px-3 font-medium text-right">Low</th>
-                <th className="py-2.5 px-3 font-medium text-right">Close</th>
-                <th className="py-2.5 px-3 font-medium text-right">Volume</th>
-                <th className="py-2.5 px-3 font-medium text-right">Return %</th>
-                <th className="py-2.5 px-3 font-medium text-right">RSI</th>
+                <th className="py-2.5 px-3 font-medium">Время (UTC)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Открытие (Open)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Максимум (High)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Минимум (Low)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Закрытие (Close)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Объем (Volume)</th>
+                <th className="py-2.5 px-3 font-medium text-right">Доходность %</th>
+                <th className="py-2.5 px-3 font-medium text-right">RSI (14)</th>
                 <th className="py-2.5 px-3 font-medium text-right">MACD Hist</th>
-                <th className="py-2.5 px-3 font-medium text-right">ATR %</th>
+                <th className="py-2.5 px-3 font-medium text-right">Волатильность ATR %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40">

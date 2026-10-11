@@ -4,6 +4,7 @@
  */
 
 import { Candle, Indicators, FeatureImportanceItem, ForecastPoint, ModelHyperparameters, ModelMetrics, ForecastResult, VolatilityMetrics } from '../types/crypto';
+import { calculateBestTradeRecommendation } from './tradeAdvisor';
 
 interface TreeNode {
   isLeaf: boolean;
@@ -422,6 +423,16 @@ export function trainAndForecastGBDT(
   else if (targetReturnPct < -2.0 && bullishProbability < 0.35) signal = 'STRONG_SELL';
   else if (targetReturnPct < -0.5 && bullishProbability < 0.47) signal = 'SELL';
 
+  const tradeRecommendation = calculateBestTradeRecommendation(
+    lastPrice,
+    finalForecastPrice,
+    targetReturnPct,
+    bullishProbability,
+    volatilityMetrics,
+    indicators,
+    candles[latestIndex]
+  );
+
   return {
     modelType: 'gbdt',
     lastActualPrice: lastPrice,
@@ -435,5 +446,6 @@ export function trainAndForecastGBDT(
     trainingLossHistory: model.lossHistory,
     volatilityMetrics,
     computedAt: Date.now(),
+    tradeRecommendation,
   };
 }

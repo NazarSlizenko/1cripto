@@ -4,6 +4,7 @@
  */
 
 import { Candle, Indicators, ForecastPoint, ModelHyperparameters, ModelMetrics, ForecastResult, VolatilityMetrics } from '../types/crypto';
+import { calculateBestTradeRecommendation } from './tradeAdvisor';
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-Math.max(-15, Math.min(15, x))));
@@ -348,6 +349,16 @@ export function trainAndForecastLSTM(
     { feature: 'volume_norm', name: 'Volume Flow Dynamics', importance: 0.13, category: 'volume' as const },
   ];
 
+  const tradeRecommendation = calculateBestTradeRecommendation(
+    lastPrice,
+    finalForecastPrice,
+    targetReturnPct,
+    bullishProbability,
+    volatilityMetrics,
+    indicators,
+    candles[latestIndex]
+  );
+
   return {
     modelType: 'lstm',
     lastActualPrice: lastPrice,
@@ -361,6 +372,7 @@ export function trainAndForecastLSTM(
     trainingLossHistory: lstm.lossHistory,
     volatilityMetrics,
     computedAt: Date.now(),
+    tradeRecommendation,
   };
 }
 
@@ -416,5 +428,6 @@ export function blendEnsemble(gbdtRes: ForecastResult, lstmRes: ForecastResult):
     trainingLossHistory: gbdtRes.trainingLossHistory,
     volatilityMetrics: gbdtRes.volatilityMetrics,
     computedAt: Date.now(),
+    tradeRecommendation: gbdtRes.tradeRecommendation,
   };
 }

@@ -16,7 +16,7 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
     return (
       <div className="bg-slate-900/60 border border-slate-800/90 rounded-xl p-5 flex items-center justify-center min-h-[260px]">
         <div className="text-center text-slate-500 text-sm">
-          <span>Train model to view algorithmic signal and target price.</span>
+          <span>Запустите обучение для расчета прогноза и сигналов.</span>
         </div>
       </div>
     );
@@ -43,11 +43,11 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
   }[signal];
 
   const signalLabels = {
-    STRONG_BUY: 'STRONG BULLISH',
-    BUY: 'BULLISH',
-    NEUTRAL: 'NEUTRAL / CHOP',
-    SELL: 'BEARISH',
-    STRONG_SELL: 'STRONG BEARISH',
+    STRONG_BUY: 'АКТИВНЫЙ ЛОНГ',
+    BUY: 'ЛОНГ / ПОКУПКА',
+    NEUTRAL: 'НЕЙТРАЛЬНО / ФЛЭТ',
+    SELL: 'ШОРТ / ПРОДАЖА',
+    STRONG_SELL: 'АКТИВНЫЙ ШОРТ',
   }[signal];
 
   const topFeatures = featureImportance.slice(0, 5);
@@ -58,17 +58,17 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
         {/* Header row */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Model Forecast Verdict
+            Вердикт прогноза модели
           </div>
           <span className="font-mono text-xs text-slate-500 uppercase">
-            {modelType.toUpperCase()} Engine
+            Движок: {modelType.toUpperCase()}
           </span>
         </div>
 
         {/* Signal & Target Price Section */}
         <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <div className="text-xs text-slate-400">Target Horizon Price</div>
+            <div className="text-xs text-slate-400">Целевая цена на горизонте</div>
             <div className="flex items-baseline gap-2 mt-0.5">
               <span className="text-3xl font-bold font-mono tabular-nums text-white">
                 ${targetPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -93,10 +93,10 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
         <div className="mt-4">
           <div className="flex items-center justify-between text-xs font-mono tabular-nums text-slate-400 mb-1.5">
             <span className="text-emerald-400 font-semibold">
-              Bull: {(bullishProbability * 100).toFixed(1)}%
+              Бычья: {(bullishProbability * 100).toFixed(1)}%
             </span>
             <span className="text-rose-400 font-semibold">
-              Bear: {((1 - bullishProbability) * 100).toFixed(1)}%
+              Медвежья: {((1 - bullishProbability) * 100).toFixed(1)}%
             </span>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
@@ -114,7 +114,7 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
         {/* Volatility Regime Alert */}
         <div className="mt-4 p-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-slate-400 font-medium">Volatility Regime:</span>
+            <span className="text-slate-400 font-medium">Режим волатильности:</span>
             <span className="font-semibold text-amber-400 font-mono">
               {volatilityMetrics.currentRegime}
             </span>
@@ -127,8 +127,8 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
         {/* Top Feature Importance Breakdown */}
         <div className="mt-4 pt-3 border-t border-slate-800/80">
           <div className="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
-            <span>Primary Predictive Drivers</span>
-            <span className="text-[11px] font-mono text-slate-500">GBDT Gain</span>
+            <span>Ключевые предиктивные факторы</span>
+            <span className="text-[11px] font-mono text-slate-500">Прирост Gain</span>
           </div>
 
           <div className="space-y-1.5">
@@ -156,8 +156,8 @@ export const SignalSummaryCard: React.FC<SignalSummaryCardProps> = ({ forecast }
 
       {/* Footer timestamps */}
       <div className="mt-4 pt-2 border-t border-slate-800/60 text-[10px] font-mono text-slate-500 flex justify-between">
-        <span>Evaluated: {new Date(forecast.computedAt).toLocaleTimeString()}</span>
-        <span>Hit Ratio: {forecast.metrics.directionalAccuracy}%</span>
+        <span>Расчет: {new Date(forecast.computedAt).toLocaleTimeString()}</span>
+        <span>Точность направления: <strong className="text-emerald-400">{forecast.metrics.directionalAccuracy}%</strong></span>
       </div>
     </div>
   );

@@ -73,7 +73,7 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
       {/* Top Metric Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Strategy PnL</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Доходность стратегии</div>
           <div
             className={`text-xl font-bold font-mono tabular-nums mt-1 ${
               totalReturnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
@@ -82,11 +82,11 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
             {totalReturnPct >= 0 ? '+' : ''}
             {totalReturnPct}%
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Cumulative return</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Кумулятивный PnL</div>
         </div>
 
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Benchmark BTC</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Бенчмарк BTC</div>
           <div
             className={`text-xl font-bold font-mono tabular-nums mt-1 ${
               benchmarkReturnPct >= 0 ? 'text-cyan-400' : 'text-rose-400'
@@ -95,11 +95,11 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
             {benchmarkReturnPct >= 0 ? '+' : ''}
             {benchmarkReturnPct}%
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Buy & Hold BTC</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Купи и держи (HODL)</div>
         </div>
 
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Alpha Generated</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Альфа (Alpha)</div>
           <div
             className={`text-xl font-bold font-mono tabular-nums mt-1 ${
               alphaPct >= 0 ? 'text-emerald-400' : 'text-slate-400'
@@ -108,31 +108,31 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
             {alphaPct >= 0 ? '+' : ''}
             {alphaPct}%
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Excess return</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Избыточный доход</div>
         </div>
 
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Sharpe Ratio</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Коэф. Шарпа</div>
           <div className="text-xl font-bold font-mono tabular-nums text-indigo-400 mt-1">
             {sharpeRatio}
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Annualized risk-adj</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Скорректирован на риск</div>
         </div>
 
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Max Drawdown</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Макс. просадка</div>
           <div className="text-xl font-bold font-mono tabular-nums text-rose-400 mt-1">
             -{maxDrawdownPct}%
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Peak-to-trough</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Пик к минимуму</div>
         </div>
 
         <div className="p-3.5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
-          <div className="text-[10px] uppercase font-semibold text-slate-400">Win Rate / PF</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400">Винрейт / PF</div>
           <div className="text-xl font-bold font-mono tabular-nums text-slate-200 mt-1">
             {winRatePct}% <span className="text-xs text-slate-400 font-normal">({profitFactor})</span>
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{totalTrades} trades executed</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{totalTrades} сделок исполнено</div>
         </div>
       </div>
 
@@ -140,19 +140,19 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
       <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
         <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800/80 mb-4 gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">Cumulative Performance Comparison</h3>
+            <h3 className="text-sm font-semibold text-white">Кривая доходности стратегии (Equity Curve)</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Walk-forward out-of-sample portfolio equity: ML Model Strategy vs BTC Buy-and-Hold
+              Сравнение динамики портфеля: ML-стратегия против пассивного удержания BTC (HODL)
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs font-mono">
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-0.5 bg-emerald-400"></span>
-              <span className="text-slate-300 font-semibold">Model Strategy</span>
+              <span className="text-slate-300 font-semibold">Стратегия модели</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-0.5 bg-slate-500 stroke-dashed"></span>
-              <span className="text-slate-400">HODL Benchmark</span>
+              <span className="text-slate-400">Бенчмарк HODL</span>
             </div>
           </div>
         </div>
@@ -176,9 +176,9 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
       {/* Executed Trades Table */}
       <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
         <div className="pb-3 border-b border-slate-800/80 mb-3">
-          <h3 className="text-sm font-semibold text-white">Recent Simulated Execution Log</h3>
+          <h3 className="text-sm font-semibold text-white">Журнал исполненных сделок бэктеста</h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Walk-forward trades executed at close of candle with 0.06% slippage & taker commission deduction
+            Сделки out-of-sample исполняются по цене закрытия с учетом 0.06% комиссии биржи
           </p>
         </div>
 
@@ -186,25 +186,25 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
           <table className="w-full text-xs font-mono tabular-nums">
             <thead className="sticky top-0 bg-slate-950/90 backdrop-blur-xs">
               <tr className="text-slate-400 border-b border-slate-800/60 text-left">
-                <th className="py-2.5 px-3 font-medium">Timestamp</th>
-                <th className="py-2.5 px-3 font-medium">Action</th>
-                <th className="py-2.5 px-3 font-medium text-right">Execution Price</th>
-                <th className="py-2.5 px-3 font-medium text-right">Trade PnL %</th>
-                <th className="py-2.5 px-3 font-medium text-right">Portfolio Return</th>
+                <th className="py-2.5 px-3 font-medium">Время</th>
+                <th className="py-2.5 px-3 font-medium">Действие</th>
+                <th className="py-2.5 px-3 font-medium text-right">Цена входа/выхода</th>
+                <th className="py-2.5 px-3 font-medium text-right">PnL сделки %</th>
+                <th className="py-2.5 px-3 font-medium text-right">Доходность депо</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40">
               {trades.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-slate-500 font-sans">
-                    No trades generated in the selected window.
+                    Сделок в выбранном окне не зафиксировано.
                   </td>
                 </tr>
               ) : (
                 trades.map((tr) => (
                   <tr key={tr.id} className="hover:bg-slate-800/30">
                     <td className="py-2 px-3 text-slate-400">
-                      {new Date(tr.timestamp).toLocaleString('en-US', {
+                      {new Date(tr.timestamp).toLocaleString('ru-RU', {
                         month: 'short',
                         day: 'numeric',
                         hour: '2-digit',
@@ -217,7 +217,7 @@ export const BacktestTab: React.FC<BacktestTabProps> = ({ backtestResult }) => {
                           tr.type === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
                         }`}
                       >
-                        {tr.type}
+                        {tr.type === 'BUY' ? 'ПОКУПКА (LONG)' : 'ПРОДАЖА (EXIT)'}
                       </span>
                     </td>
                     <td className="py-2 px-3 text-right text-slate-200">

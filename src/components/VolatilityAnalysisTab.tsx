@@ -63,50 +63,50 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
         {/* Garman-Klass Card */}
         <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl relative overflow-hidden">
           <div className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">
-            Garman-Klass Estimator (OHLC)
+            Оценка Гармана-Класса (OHLC)
           </div>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-bold font-mono tabular-nums text-white">
               {gk.toFixed(1)}%
             </span>
-            <span className="text-xs font-mono text-slate-400">annualized</span>
+            <span className="text-xs font-mono text-slate-400">годовых</span>
           </div>
           <div className="mt-3 text-xs text-slate-400 leading-relaxed">
-            Uses Open, High, Low, and Close jumps. Statistical efficiency is{' '}
-            <span className="text-indigo-300 font-semibold font-mono">~7.4x higher</span> than simple close-to-close variance.
+            Учитывает геометрию Open, High, Low и Close. Статистическая эффективность{' '}
+            <span className="text-indigo-300 font-semibold font-mono">в ~7.4 раза выше</span> стандартной дисперсии цен закрытия.
           </div>
         </div>
 
         {/* Parkinson Card */}
         <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
           <div className="text-xs font-semibold uppercase tracking-wider text-cyan-400 mb-1">
-            Parkinson Estimator (High-Low)
+            Оценка Паркинсона (High-Low)
           </div>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-bold font-mono tabular-nums text-white">
               {parkinson.toFixed(1)}%
             </span>
-            <span className="text-xs font-mono text-slate-400">annualized</span>
+            <span className="text-xs font-mono text-slate-400">годовых</span>
           </div>
           <div className="mt-3 text-xs text-slate-400 leading-relaxed">
-            Measures continuous extreme values over continuous Brownian paths. Approximately{' '}
-            <span className="text-cyan-300 font-semibold font-mono">5.0x more efficient</span> than discrete returns.
+            Измеряет непрерывный размах броуновской траектории. Эффективность{' '}
+            <span className="text-cyan-300 font-semibold font-mono">в ~5.0 раз выше</span> традиционного дискретного сэмплирования.
           </div>
         </div>
 
         {/* Close-to-Close Realized Card */}
         <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-            Classical Realized Volatility
+            Классическая реализованная волатильность
           </div>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-bold font-mono tabular-nums text-white">
               {cc.toFixed(1)}%
             </span>
-            <span className="text-xs font-mono text-slate-400">annualized</span>
+            <span className="text-xs font-mono text-slate-400">годовых</span>
           </div>
           <div className="mt-3 text-xs text-slate-400 leading-relaxed">
-            Sample standard deviation of logarithmic close returns r_t = ln(C_t / C_t-1). Baseline reference metric.
+            Стандартное отклонение логарифмических доходностей r_t = ln(C_t / C_t-1). Базовый ориентир классического анализа.
           </div>
         </div>
       </div>
@@ -115,13 +115,13 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
       <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-white">Historical Volatility Regime Trajectory</h3>
+            <h3 className="text-sm font-semibold text-white">Динамика режимов исторической волатильности</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Rolling 20-period Garman-Klass volatility (%) tracking expansion and compression cycles
+              Скользящая 20-периодная волатильность Гармана-Класса (%) — циклы сжатия (Squeeze) и расширения
             </p>
           </div>
           <span className="text-xs font-mono text-indigo-400 font-semibold">
-            Current: {gk.toFixed(1)}%
+            Текущая: {gk.toFixed(1)}%
           </span>
         </div>
 
@@ -129,8 +129,8 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
           <svg viewBox={`0 0 ${sparkWidth} ${sparkHeight}`} className="w-full h-full block">
             <line x1="0" y1={sparkHeight * 0.3} x2={sparkWidth} y2={sparkHeight * 0.3} stroke="#334155" strokeDasharray="3 3" strokeWidth="0.8" />
             <line x1="0" y1={sparkHeight * 0.7} x2={sparkWidth} y2={sparkHeight * 0.7} stroke="#334155" strokeDasharray="3 3" strokeWidth="0.8" />
-            <text x="6" y={sparkHeight * 0.3 - 4} fill="#64748b" fontSize="9" fontFamily="monospace">Expansion Band</text>
-            <text x="6" y={sparkHeight * 0.7 - 4} fill="#64748b" fontSize="9" fontFamily="monospace">Compression Floor</text>
+            <text x="6" y={sparkHeight * 0.3 - 4} fill="#64748b" fontSize="9" fontFamily="monospace">Зона расширения (Expansion)</text>
+            <text x="6" y={sparkHeight * 0.7 - 4} fill="#64748b" fontSize="9" fontFamily="monospace">Зона сжатия (Squeeze Floor)</text>
             <path d={sparkPath} stroke="#6366f1" strokeWidth="2" fill="none" />
           </svg>
         </div>
@@ -141,9 +141,9 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
         {/* Volatility Cone Table */}
         <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl">
           <div className="pb-3 border-b border-slate-800/80 mb-3">
-            <h3 className="text-sm font-semibold text-white">Projected Volatility Cone (Term Structure)</h3>
+            <h3 className="text-sm font-semibold text-white">Проекционный конус волатильности (Term Structure)</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              ±1σ and ±2σ dispersion bands from current spot (${lastPrice.toFixed(0)})
+              Дисперсионные границы ±1σ и ±2σ от текущего спота (${lastPrice.toFixed(0)})
             </p>
           </div>
 
@@ -151,11 +151,11 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
             <table className="w-full text-xs font-mono tabular-nums">
               <thead>
                 <tr className="text-slate-400 border-b border-slate-800/60 text-left">
-                  <th className="py-2 font-medium">Horizon</th>
-                  <th className="py-2 font-medium">Expected Vol (σ·√T)</th>
-                  <th className="py-2 font-medium text-right">-1σ Lower</th>
-                  <th className="py-2 font-medium text-right">+1σ Upper</th>
-                  <th className="py-2 font-medium text-right">95% Range (2σ)</th>
+                  <th className="py-2 font-medium">Горизонт</th>
+                  <th className="py-2 font-medium">Ожидаемая волатильность (σ·√T)</th>
+                  <th className="py-2 font-medium text-right">-1σ Нижняя</th>
+                  <th className="py-2 font-medium text-right">+1σ Верхняя</th>
+                  <th className="py-2 font-medium text-right">95% Диапазон (2σ)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40">
@@ -168,7 +168,7 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
 
                   return (
                     <tr key={d} className="hover:bg-slate-800/30">
-                      <td className="py-2 text-slate-300 font-sans font-medium">{d} {d === 1 ? 'Day' : 'Days'}</td>
+                      <td className="py-2 text-slate-300 font-sans font-medium">{d} {d === 1 ? 'День' : 'Дней'}</td>
                       <td className="py-2 text-cyan-400">{(stepSigma * 100).toFixed(2)}%</td>
                       <td className="py-2 text-rose-400 text-right">${lower1s.toFixed(0)}</td>
                       <td className="py-2 text-emerald-400 text-right">${upper1s.toFixed(0)}</td>
@@ -185,41 +185,41 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
         <div className="p-5 bg-slate-900/60 border border-slate-800/90 rounded-xl flex flex-col justify-between">
           <div>
             <div className="pb-3 border-b border-slate-800/80 mb-3">
-              <h3 className="text-sm font-semibold text-white">Statistical Moments & Tail Risk (VaR)</h3>
+              <h3 className="text-sm font-semibold text-white">Статистические моменты и хвостовые риски (VaR)</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Empirical distribution characteristics of historical returns
+                Эмпирические параметры плотности распределения исторических доходностей
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs mb-4">
               <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/60">
-                <div className="text-slate-500 text-[11px]">Sample Skewness</div>
+                <div className="text-slate-500 text-[11px]">Асимметрия (Skewness)</div>
                 <div className="text-lg font-bold font-mono text-white mt-1">
                   {volatilityMetrics.skewness.toFixed(3)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  {volatilityMetrics.skewness < 0 ? 'Negative asymmetry (tail crash risk)' : 'Positive momentum skew'}
+                  {volatilityMetrics.skewness < 0 ? 'Левосторонняя асимметрия (риск резких проливов)' : 'Положительный бычий моментум'}
                 </div>
               </div>
 
               <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/60">
-                <div className="text-slate-500 text-[11px]">Kurtosis</div>
+                <div className="text-slate-500 text-[11px]">Эксцесс (Kurtosis)</div>
                 <div className="text-lg font-bold font-mono text-white mt-1">
                   {volatilityMetrics.kurtosis.toFixed(2)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  {volatilityMetrics.kurtosis > 3 ? 'Leptokurtic (fat tails vs normal 3.0)' : 'Mesokurtic'}
+                  {volatilityMetrics.kurtosis > 3 ? 'Лептокуртическое (тяжелые хвосты vs 3.0 нормальное)' : 'Мезокуртическое'}
                 </div>
               </div>
             </div>
 
             <div className="space-y-2.5">
               <div className="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded-lg">
-                <span className="text-slate-400 font-sans">1-Day 95% Value-at-Risk (VaR):</span>
+                <span className="text-slate-400 font-sans">1-дневный 95% Value-at-Risk (VaR):</span>
                 <span className="font-mono font-bold text-rose-400">-{volatilityMetrics.var95.toFixed(2)}%</span>
               </div>
               <div className="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded-lg">
-                <span className="text-slate-400 font-sans">1-Day 99% Value-at-Risk (VaR):</span>
+                <span className="text-slate-400 font-sans">1-дневный 99% Value-at-Risk (VaR):</span>
                 <span className="font-mono font-bold text-rose-400">-{volatilityMetrics.var99.toFixed(2)}%</span>
               </div>
               <div className="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded-lg">
@@ -230,7 +230,7 @@ export const VolatilityAnalysisTab: React.FC<VolatilityAnalysisTabProps> = ({
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-800/60 text-[11px] text-slate-500">
-            Tail risks incorporate extreme values observed in the distribution history without assuming an unrealistic Gaussian bell curve.
+            Оценка хвостовых рисков учитывает экстремальные шоковые события реального распределения без ложного допущения о симметричном нормальном колоколе Гаусса.
           </div>
         </div>
       </div>

@@ -33,18 +33,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
   const modelOptions: Array<{ id: MLModelType; title: string; subtitle: string }> = [
     {
       id: 'gbdt',
-      title: 'GBDT (Gradient Boosting)',
-      subtitle: 'Ensemble of regression decision trees minimizing squared loss',
+      title: 'GBDT (Градиентный бустинг)',
+      subtitle: 'Ансамбль деревьев решений, минимизирующий квадратичную функцию потерь',
     },
     {
       id: 'lstm',
-      title: 'LSTM Recurrent Network',
-      subtitle: 'Sequence neural network with memory cells & gating',
+      title: 'LSTM Нейросеть',
+      subtitle: 'Рекуррентная архитектура с ячейками памяти и вентилями',
     },
     {
       id: 'hybrid',
-      title: 'Hybrid Ensemble Blend',
-      subtitle: 'Inverse-variance blended model combining GBDT + LSTM',
+      title: 'Гибридный ансамбль',
+      subtitle: 'Взвешенная комбинация моделей GBDT + LSTM',
     },
   ];
 
@@ -77,14 +77,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         <div className="flex items-center gap-2">
           <Cpu className="w-4 h-4 text-cyan-400" />
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-            Machine Learning Engine Configuration
+            Конфигурация алгоритмов машинного обучения
           </span>
         </div>
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
           className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
         >
-          <span>{showAdvanced ? 'Hide Hyperparameters' : 'Tuning Parameters'}</span>
+          <span>{showAdvanced ? 'Скрыть параметры' : 'Настройка гиперпараметров'}</span>
           {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
       </div>
@@ -104,7 +104,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-semibold text-slate-200">{opt.title}</span>
               {modelType === opt.id && (
-                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">Active</span>
+                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">Активна</span>
               )}
             </div>
             <p className="text-[11px] text-slate-400 leading-snug">{opt.subtitle}</p>
@@ -117,8 +117,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Forecast Horizon Slider */}
         <div>
           <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400">Forecast Horizon:</span>
-            <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.forecastHorizon} steps</span>
+            <span className="text-slate-400">Горизонт прогноза:</span>
+            <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.forecastHorizon} шагов</span>
           </div>
           <input
             type="range"
@@ -134,8 +134,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Lookback Window Slider */}
         <div>
           <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400">Sequence Lookback:</span>
-            <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.lookbackWindow} periods</span>
+            <span className="text-slate-400">Окно памяти (Lookback):</span>
+            <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.lookbackWindow} свечей</span>
           </div>
           <input
             type="range"
@@ -151,7 +151,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Learning Rate Slider */}
         <div>
           <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400">Learning Rate (η):</span>
+            <span className="text-slate-400">Скорость обучения (η):</span>
             <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.learningRate.toFixed(3)}</span>
           </div>
           <input
@@ -168,7 +168,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Iterations / Trees / Epochs */}
         <div>
           <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400">Trees / Epochs:</span>
+            <span className="text-slate-400">Деревья / Эпохи:</span>
             <span className="font-mono text-cyan-300 font-semibold">{hyperparameters.iterations}</span>
           </div>
           <input
@@ -188,7 +188,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-800/60 bg-slate-950/30 p-3 rounded-lg">
           <div>
             <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-400">GBDT Tree Max Depth:</span>
+              <span className="text-slate-400">Макс. глубина дерева GBDT:</span>
               <span className="font-mono text-slate-200">{hyperparameters.treeDepth}</span>
             </div>
             <input
@@ -203,7 +203,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
           <div>
             <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-400">LSTM Hidden Cell Units:</span>
+              <span className="text-slate-400">Нейроны ячейки LSTM:</span>
               <span className="font-mono text-slate-200">{hyperparameters.lstmHiddenUnits}</span>
             </div>
             <input
@@ -224,7 +224,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Loss Convergence mini-chart */}
         <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800/80">
           <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1">
-            <span>Training Loss Convergence (MSE)</span>
+            <span>Сходимость ошибки (MSE Loss)</span>
             <span className="text-cyan-400">{lossPoints[lossPoints.length - 1]?.toFixed(5)}</span>
           </div>
           <svg viewBox={`0 0 ${lossWidth} ${lossHeight}`} className="w-full h-9 block">
@@ -235,35 +235,35 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         {/* Validation Performance KPIs */}
         <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-            <div className="text-[10px] text-slate-500 uppercase font-medium">Directional Hit</div>
+            <div className="text-[10px] text-slate-500 uppercase font-medium">Точность тренда</div>
             <div className="text-base font-bold font-mono tabular-nums text-emerald-400">
               {metrics ? `${metrics.directionalAccuracy}%` : '—'}
             </div>
-            <div className="text-[10px] text-slate-500">Up/Down Trend</div>
+            <div className="text-[10px] text-slate-500">Hit Ratio</div>
           </div>
 
           <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-            <div className="text-[10px] text-slate-500 uppercase font-medium">Test RMSE</div>
+            <div className="text-[10px] text-slate-500 uppercase font-medium">Ошибка RMSE</div>
             <div className="text-base font-bold font-mono tabular-nums text-slate-200">
               {metrics ? `${metrics.rmse}%` : '—'}
             </div>
-            <div className="text-[10px] text-slate-500">Spread error</div>
+            <div className="text-[10px] text-slate-500">Разброс ошибки</div>
           </div>
 
           <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-            <div className="text-[10px] text-slate-500 uppercase font-medium">Test MAE</div>
+            <div className="text-[10px] text-slate-500 uppercase font-medium">Ошибка MAE</div>
             <div className="text-base font-bold font-mono tabular-nums text-slate-200">
               {metrics ? `${metrics.mae}%` : '—'}
             </div>
-            <div className="text-[10px] text-slate-500">Mean absolute</div>
+            <div className="text-[10px] text-slate-500">Средняя абсолютная</div>
           </div>
 
           <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-            <div className="text-[10px] text-slate-500 uppercase font-medium">R² Score</div>
+            <div className="text-[10px] text-slate-500 uppercase font-medium">Коэффициент R²</div>
             <div className="text-base font-bold font-mono tabular-nums text-cyan-300">
               {metrics ? metrics.r2 : '—'}
             </div>
-            <div className="text-[10px] text-slate-500">Variance explained</div>
+            <div className="text-[10px] text-slate-500">Объясненная дисперсия</div>
           </div>
         </div>
       </div>

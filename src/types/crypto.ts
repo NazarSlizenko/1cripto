@@ -88,6 +88,30 @@ export interface ModelMetrics {
 
 export type TradingSignal = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL';
 
+export interface TradeRecommendation {
+  direction: 'LONG' | 'SHORT' | 'NEUTRAL';
+  entryPrice: number;
+  stopLossPrice: number;
+  takeProfit1Price: number;
+  takeProfit2Price: number;
+  riskRewardRatio: number;
+  riskPct: number;
+  profitPct1: number;
+  profitPct2: number;
+  recommendedPositionSizePct: number;
+  rationale: string;
+  invalidationCondition: string;
+  confidenceScore: number; // 0 to 100
+}
+
+export interface TrainingProgressState {
+  currentEpoch: number;
+  totalEpochs: number;
+  currentLoss: number;
+  lossHistory: number[];
+  status: 'idle' | 'training' | 'completed';
+}
+
 export interface ForecastResult {
   modelType: MLModelType;
   lastActualPrice: number;
@@ -101,6 +125,7 @@ export interface ForecastResult {
   trainingLossHistory: number[];
   volatilityMetrics: VolatilityMetrics;
   computedAt: number;
+  tradeRecommendation: TradeRecommendation;
 }
 
 export interface SimulatedTrade {

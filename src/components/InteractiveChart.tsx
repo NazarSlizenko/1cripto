@@ -26,6 +26,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   const [chartMode, setChartMode] = useState<'candle' | 'line'>('candle');
   const [showEMA, setShowEMA] = useState<boolean>(true);
   const [showBB, setShowBB] = useState<boolean>(true);
+  const [showTradeLevels, setShowTradeLevels] = useState<boolean>(true);
   const [activeSubchart, setActiveSubchart] = useState<'none' | 'rsi' | 'macd'>('rsi');
   const [rangeCount, setRangeCount] = useState<number>(80); // default show last 80 candles + forecast
 
@@ -286,7 +287,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 chartMode === 'candle' ? 'bg-slate-800 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Candles
+              Свечи
             </button>
             <button
               onClick={() => setChartMode('line')}
@@ -294,7 +295,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 chartMode === 'line' ? 'bg-slate-800 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Line
+              Линия
             </button>
           </div>
 
@@ -318,7 +319,17 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   : 'border-slate-800 bg-slate-900/60 text-slate-500 hover:text-slate-400'
               }`}
             >
-              Bollinger Bands
+              Боллинджер
+            </button>
+            <button
+              onClick={() => setShowTradeLevels(!showTradeLevels)}
+              className={`px-2.5 py-1 rounded-md border font-medium transition-colors cursor-pointer ${
+                showTradeLevels
+                  ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300'
+                  : 'border-slate-800 bg-slate-900/60 text-slate-500 hover:text-slate-400'
+              }`}
+            >
+              Уровни SL/TP
             </button>
           </div>
 
@@ -338,14 +349,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 activeSubchart === 'macd' ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              MACD (12,26,9)
+              MACD
             </button>
           </div>
         </div>
 
         {/* Range zoom buttons */}
         <div className="flex items-center gap-1 text-xs">
-          <span className="text-slate-500 mr-1 text-[11px]">Window:</span>
+          <span className="text-slate-500 mr-1 text-[11px]">Окно:</span>
           {[40, 80, 120, 200].map((cnt) => (
             <button
               key={cnt}
@@ -365,18 +376,18 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         {hoveredCandle ? (
           <>
             <span className="text-slate-500">
-              {new Date(hoveredCandle.timestamp).toLocaleString('en-US', {
+              {new Date(hoveredCandle.timestamp).toLocaleString('ru-RU', {
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
               })}
             </span>
-            <span>O: <span className="text-white">${hoveredCandle.open.toFixed(2)}</span></span>
-            <span>H: <span className="text-emerald-400">${hoveredCandle.high.toFixed(2)}</span></span>
-            <span>L: <span className="text-rose-400">${hoveredCandle.low.toFixed(2)}</span></span>
-            <span>C: <span className="text-cyan-400">${hoveredCandle.close.toFixed(2)}</span></span>
-            <span>Vol: <span className="text-slate-400">{hoveredCandle.volume.toFixed(1)}</span></span>
+            <span>Откр: <span className="text-white">${hoveredCandle.open.toFixed(2)}</span></span>
+            <span>Макс: <span className="text-emerald-400">${hoveredCandle.high.toFixed(2)}</span></span>
+            <span>Мин: <span className="text-rose-400">${hoveredCandle.low.toFixed(2)}</span></span>
+            <span>Закр: <span className="text-cyan-400">${hoveredCandle.close.toFixed(2)}</span></span>
+            <span>Объем: <span className="text-slate-400">{hoveredCandle.volume.toFixed(1)}</span></span>
             {hoveredIndicator && (
               <>
                 <span>RSI: <span className="text-amber-300">{hoveredIndicator.rsi.toFixed(1)}</span></span>
@@ -386,22 +397,22 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </>
         ) : hoveredForecast ? (
           <>
-            <span className="text-cyan-400 font-semibold">ML FORECAST</span>
+            <span className="text-cyan-400 font-semibold">ПРОГНОЗ ML</span>
             <span className="text-slate-500">
-              {new Date(hoveredForecast.timestamp).toLocaleString('en-US', {
+              {new Date(hoveredForecast.timestamp).toLocaleString('ru-RU', {
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
               })}
             </span>
-            <span>Target: <span className="text-white font-bold">${hoveredForecast.price.toFixed(2)}</span></span>
-            <span>80% Range: <span className="text-cyan-300">${hoveredForecast.lower80.toFixed(0)} - ${hoveredForecast.upper80.toFixed(0)}</span></span>
-            <span>95% Cone: <span className="text-blue-300">${hoveredForecast.lower95.toFixed(0)} - ${hoveredForecast.upper95.toFixed(0)}</span></span>
+            <span>Цель: <span className="text-white font-bold">${hoveredForecast.price.toFixed(2)}</span></span>
+            <span>Диапазон 80%: <span className="text-cyan-300">${hoveredForecast.lower80.toFixed(0)} - ${hoveredForecast.upper80.toFixed(0)}</span></span>
+            <span>Веер 95%: <span className="text-blue-300">${hoveredForecast.lower95.toFixed(0)} - ${hoveredForecast.upper95.toFixed(0)}</span></span>
           </>
         ) : (
           <span className="text-slate-500 text-[11px] font-sans">
-            Hover over candlesticks or the forward forecast cone to inspect precise quantitative coordinates.
+            Наведите курсор на график свечей или веер прогноза для отображения точных координат.
           </span>
         )}
       </div>
@@ -561,6 +572,128 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             <path d={ema50Path} stroke="#f59e0b" strokeWidth="1.5" fill="none" opacity="0.85" />
           )}
 
+          {/* Trade Setup Level Lines (Take-Profit, Entry, Stop-Loss) */}
+          {showTradeLevels && forecastResult?.tradeRecommendation && (
+            <g>
+              {/* Take Profit 1 Line */}
+              {(() => {
+                const yTP = priceToY(forecastResult.tradeRecommendation.takeProfit1Price);
+                if (yTP >= 10 && yTP <= mainHeight) {
+                  return (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={yTP}
+                        x2={width - paddingRight}
+                        y2={yTP}
+                        stroke="#10b981"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 2"
+                      />
+                      <rect
+                        x={width - paddingRight + 2}
+                        y={yTP - 8}
+                        width="70"
+                        height="16"
+                        fill="#064e3b"
+                        rx="2"
+                      />
+                      <text
+                        x={width - paddingRight + 6}
+                        y={yTP + 3}
+                        fill="#34d399"
+                        fontSize="9"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                      >
+                        TP ${forecastResult.tradeRecommendation.takeProfit1Price.toFixed(0)}
+                      </text>
+                    </g>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Entry Level Line */}
+              {(() => {
+                const yEntry = priceToY(forecastResult.tradeRecommendation.entryPrice);
+                if (yEntry >= 10 && yEntry <= mainHeight) {
+                  return (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={yEntry}
+                        x2={width - paddingRight}
+                        y2={yEntry}
+                        stroke="#38bdf8"
+                        strokeWidth="1.5"
+                        strokeDasharray="2 2"
+                      />
+                      <rect
+                        x={width - paddingRight + 2}
+                        y={yEntry - 8}
+                        width="70"
+                        height="16"
+                        fill="#0c4a6e"
+                        rx="2"
+                      />
+                      <text
+                        x={width - paddingRight + 6}
+                        y={yEntry + 3}
+                        fill="#7dd3fc"
+                        fontSize="9"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                      >
+                        Вход ${forecastResult.tradeRecommendation.entryPrice.toFixed(0)}
+                      </text>
+                    </g>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Stop Loss Line */}
+              {(() => {
+                const ySL = priceToY(forecastResult.tradeRecommendation.stopLossPrice);
+                if (ySL >= 10 && ySL <= mainHeight) {
+                  return (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={ySL}
+                        x2={width - paddingRight}
+                        y2={ySL}
+                        stroke="#f43f5e"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 2"
+                      />
+                      <rect
+                        x={width - paddingRight + 2}
+                        y={ySL - 8}
+                        width="70"
+                        height="16"
+                        fill="#4c0519"
+                        rx="2"
+                      />
+                      <text
+                        x={width - paddingRight + 6}
+                        y={ySL + 3}
+                        fill="#fb7185"
+                        fontSize="9"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                      >
+                        SL ${forecastResult.tradeRecommendation.stopLossPrice.toFixed(0)}
+                      </text>
+                    </g>
+                  );
+                }
+                return null;
+              })()}
+            </g>
+          )}
+
           {/* VOLUME SUB-CHART */}
           <g transform={`translate(0, ${mainHeight + 5})`}>
             <line
@@ -578,7 +711,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               fontSize="9"
               fontFamily="Plus Jakarta Sans, sans-serif"
             >
-              VOLUME
+              ОБЪЕМ (VOLUME)
             </text>
 
             {visibleCandles.map((c, i) => {
@@ -705,20 +838,24 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-1.5 bg-purple-500/30 border border-purple-500/50"></span>
-            <span>Bollinger Bands (20,2)</span>
+            <span>Полосы Боллинджера (20,2)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-0.5 bg-cyan-300 border-dashed"></span>
-            <span>ML Point Forecast</span>
+            <span>Прогноз ML</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-1.5 bg-cyan-500/20 border border-cyan-400/50"></span>
-            <span>80% & 95% Volatility Cones</span>
+            <span>Веера волатильности 80% и 95%</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-0.5 bg-emerald-400 border-dashed"></span>
+            <span>Уровни TP / SL</span>
           </div>
         </div>
 
         <div className="font-mono text-slate-500">
-          Resolution: {timeframe} · Lookback: {visibleCandles.length} candles
+          Таймфрейм: {timeframe} · История: {visibleCandles.length} свечей
         </div>
       </div>
     </div>

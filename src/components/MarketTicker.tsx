@@ -65,7 +65,7 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
         {/* Left: BTC Price & 24h Stats */}
         <div className="flex flex-wrap items-center gap-6">
           <div>
-            <div className="text-xs text-slate-400 font-medium">BTC / USD Spot</div>
+            <div className="text-xs text-slate-400 font-medium">Спот BTC / USD</div>
             <div className="flex items-baseline gap-2.5">
               <span className="text-2xl font-bold tracking-tight text-white font-mono tabular-nums">
                 ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -84,19 +84,19 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
 
           <div className="hidden lg:flex items-center gap-5 text-xs text-slate-400 border-l border-slate-800 pl-6">
             <div>
-              <div className="text-slate-500">24h High</div>
+              <div className="text-slate-500">24ч Макс</div>
               <div className="font-mono tabular-nums text-slate-200 font-medium">
                 ${high24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </div>
             </div>
             <div>
-              <div className="text-slate-500">24h Low</div>
+              <div className="text-slate-500">24ч Мин</div>
               <div className="font-mono tabular-nums text-slate-200 font-medium">
                 ${low24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </div>
             </div>
             <div>
-              <div className="text-slate-500">24h Volume</div>
+              <div className="text-slate-500">24ч Объем</div>
               <div className="font-mono tabular-nums text-slate-200 font-medium">
                 {volume24h.toLocaleString('en-US', { maximumFractionDigits: 1 })} BTC
               </div>
@@ -106,20 +106,20 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
           {/* Volatility Real-time Metrics */}
           <div className="hidden xl:flex items-center gap-5 text-xs text-slate-400 border-l border-slate-800 pl-6">
             <div>
-              <div className="text-slate-500">Parkinson Vol</div>
+              <div className="text-slate-500">Волатильность Parkinson</div>
               <div className="font-mono tabular-nums text-cyan-400 font-semibold">
-                {(volatilityMetrics.parkinsonVolAnnualized * 100).toFixed(1)}% p.a.
+                {(volatilityMetrics.parkinsonVolAnnualized * 100).toFixed(1)}% год.
               </div>
             </div>
             <div>
-              <div className="text-slate-500">Garman-Klass Vol</div>
+              <div className="text-slate-500">Волатильность Garman-Klass</div>
               <div className="font-mono tabular-nums text-indigo-400 font-semibold">
-                {(volatilityMetrics.garmanKlassVolAnnualized * 100).toFixed(1)}% p.a.
+                {(volatilityMetrics.garmanKlassVolAnnualized * 100).toFixed(1)}% год.
               </div>
             </div>
             <div>
-              <div className="text-slate-500">Regime</div>
-              <div className="font-medium text-amber-400">
+              <div className="text-slate-500">Режим рынка</div>
+              <div className="font-medium text-amber-400 font-mono">
                 {volatilityMetrics.currentRegime}
               </div>
             </div>
@@ -171,10 +171,10 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
                   ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
                   : 'border-slate-800 bg-slate-950 text-slate-400'
               }`}
-              title="Toggle automatic price & candle sync"
+              title="Автоматическая фоновая синхронизация цен и свечей с биржи"
             >
               <Activity className={`w-3.5 h-3.5 ${autoRefresh ? 'text-emerald-400' : 'text-slate-500'}`} />
-              <span>{autoRefresh ? `Live (${secondsUntilNextPoll}s)` : 'Paused'}</span>
+              <span>{autoRefresh ? `Авто (${secondsUntilNextPoll}с)` : 'Пауза'}</span>
             </button>
             <span className="hidden sm:inline text-slate-600">·</span>
             <span className="hidden sm:inline font-mono text-[11px] text-slate-500">{dataSourceName}</span>

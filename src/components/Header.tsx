@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
             Q
           </div>
           <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">
-            QuantBTC Analytics
+            QuantBTC Аналитика
           </span>
         </div>
 
@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'terminal' ? 'text-cyan-400 border-b-2 border-cyan-400 font-semibold' : 'hover:text-slate-200'
             }`}
           >
-            Terminal & Forecast
+            Терминал и Прогноз
           </button>
           <button
             onClick={() => setActiveTab('volatility')}
@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'volatility' ? 'text-cyan-400 border-b-2 border-cyan-400 font-semibold' : 'hover:text-slate-200'
             }`}
           >
-            Volatility Mechanics
+            Механика Волатильности
           </button>
           <button
             onClick={() => setActiveTab('backtest')}
@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'backtest' ? 'text-cyan-400 border-b-2 border-cyan-400 font-semibold' : 'hover:text-slate-200'
             }`}
           >
-            Walk-Forward Backtest
+            Тестирование Стратегии
           </button>
           <button
             onClick={() => setActiveTab('math')}
@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'math' ? 'text-cyan-400 border-b-2 border-cyan-400 font-semibold' : 'hover:text-slate-200'
             }`}
           >
-            Mathematical Formulas
+            Формулы и Математика
           </button>
           <button
             onClick={() => setActiveTab('data')}
@@ -76,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'data' ? 'text-cyan-400 border-b-2 border-cyan-400 font-semibold' : 'hover:text-slate-200'
             }`}
           >
-            Historical Dataset
+            Датасет и Экспорт
           </button>
         </nav>
 
@@ -86,10 +86,10 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onRefreshData}
             disabled={isRefreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-900 hover:bg-slate-800 border border-slate-750 rounded-lg transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
-            title="Fetch latest candle from exchange API"
+            title="Загрузить свежие свечи через API биржи"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
-            <span className="hidden sm:inline">Sync Exchange</span>
+            <span className="hidden sm:inline">Синхронизация</span>
           </button>
 
           <button
@@ -98,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors cursor-pointer shadow-sm shadow-cyan-500/20 disabled:opacity-60 whitespace-nowrap"
           >
             <Play className={`w-3.5 h-3.5 fill-current ${isTraining ? 'animate-pulse' : ''}`} />
-            <span>{isTraining ? 'Training...' : 'Train & Forecast'}</span>
+            <span>{isTraining ? 'Обучение...' : 'Обучить модель'}</span>
           </button>
         </div>
       </div>
