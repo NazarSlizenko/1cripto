@@ -1,0 +1,7 @@
+{
+  "name": "QuantBTC - Bitcoin ML Predictive Analytics & Volatility Engine",
+  "description": "Mathematical and statistical Bitcoin price forecasting platform using Gradient Boosting (GBDT) and LSTM sequence models, multi-exchange live API data, Parkinson/Garman-Klass volatility estimation, and real-time visualization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
