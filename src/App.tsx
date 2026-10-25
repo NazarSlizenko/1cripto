@@ -135,6 +135,47 @@ export default function App() {
   const sentSignalIdsRef = useRef<Set<string>>(new Set());
   const [sentSignalIds, setSentSignalIds] = useState<string[]>([]);
 
+  // При загрузке получаем состояние серверного 24/7 сканера (уже отправленные сигналы и серверные настройки)
+  useEffect(() => {
+    fetch('/api/bot/state')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (Array.isArray(data.sentSignalIds)) {
+          data.sentSignalIds.forEach((id: string) => sentSignalIdsRef.current.add(id));
+          setSentSignalIds(data.sentSignalIds);
+        }
+        // Если в браузере еще не введен токен, а на сервере он задан (например через переменные окружения Render)
+        if (
+          data.telegramConfig?.botToken &&
+          data.telegramConfig?.chatId &&
+          !localStorage.getItem(STORAGE_KEY_TG)
+        ) {
+          setTelegramConfig(data.telegramConfig);
+        }
+      })
+      .catch(() => {
+        // ignore if offline
+      });
+  }, []);
+
+  // Автоматическая синхронизация всех настроек со 24/7 сервером (server.ts)
+  useEffect(() => {
+    fetch('/api/bot/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        exchange,
+        timeframe,
+        strategyConfig,
+        bjConfig,
+        telegramConfig,
+      }),
+    }).catch(() => {
+      // ignore network error
+    });
+  }, [exchange, timeframe, strategyConfig, bjConfig, telegramConfig]);
+
   const handleUpdateStrategy = (cfg: RsiBbStrategyConfig) => {
     setStrategyConfig(cfg);
     try {
@@ -402,6 +443,11 @@ export default function App() {
             sendTelegramAlert(telegramConfig, msg).then((res) => {
               if (res.ok) {
                 setSentSignalIds((prev) => [...prev, signalId]);
+                fetch('/api/bot/mark-sent', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ signalId }),
+                }).catch(() => {});
                 setTelegramFeedback({
                   type: 'success',
                   message: `Алерт ${asset.baseAsset}/USDT (RSI+BB) отправлен в Telegram`,
@@ -449,6 +495,11 @@ export default function App() {
             sendTelegramAlert(telegramConfig, msg).then((res) => {
               if (res.ok) {
                 setSentSignalIds((prev) => [...prev, signalId]);
+                fetch('/api/bot/mark-sent', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ signalId }),
+                }).catch(() => {});
                 setTelegramFeedback({
                   type: 'success',
                   message: `Алерт ${asset.baseAsset}/USDT (Bj Bot) отправлен в Telegram`,
