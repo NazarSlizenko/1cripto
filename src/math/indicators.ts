@@ -355,21 +355,28 @@ export function calculateVaR(returns: number[]): { var95: number; var99: number;
 /**
  * Computes all technical and volatility indicators for candle series
  */
-export function computeIndicators(candles: Candle[]): {
+export function computeIndicators(
+  candles: Candle[],
+  options?: { rsiPeriod?: number; bbPeriod?: number; bbStdDev?: number }
+): {
   indicators: Indicators[];
   volatilityMetrics: VolatilityMetrics;
 } {
+  const rsiPeriod = options?.rsiPeriod ?? 14;
+  const bbPeriod = options?.bbPeriod ?? 20;
+  const bbStdDev = options?.bbStdDev ?? 2.0;
+
   const closes = candles.map((c) => c.close);
-  const rsi = calculateRSI(closes, 14);
+  const rsi = calculateRSI(closes, rsiPeriod);
   const { macdLine, signalLine, histogram } = calculateMACD(closes, 12, 26, 9);
   const ema9 = calculateEMA(closes, 9);
   const ema21 = calculateEMA(closes, 21);
   const ema50 = calculateEMA(closes, 50);
   const ema200 = calculateEMA(closes, 200);
 
-  // Bollinger Bands (20, 2)
-  const sma20 = calculateSMA(closes, 20);
-  const std20 = calculateRollingStdDev(closes, 20, sma20);
+  // Bollinger Bands (custom period & stdDev)
+  const smaBB = calculateSMA(closes, bbPeriod);
+  const stdBB = calculateRollingStdDev(closes, bbPeriod, smaBB);
 
   const { atr, atrPercent } = calculateATR(candles, 14);
   const obv = calculateOBV(candles);
@@ -383,11 +390,16 @@ export function computeIndicators(candles: Candle[]): {
     const logReturn = prevClose > 0 ? Math.log(candles[i].close / prevClose) : 0;
     if (i > 0) logReturns.push(logReturn);
 
-    const bbMid = sma20[i];
-    const std = std20[i];
-    const bbUpper = !isNaN(bbMid) && !isNaN(std) ? bbMid + 2 * std : NaN;
-    const bbLower = !isNaN(bbMid) && !isNaN(std) ? bbMid - 2 * std : NaN;
+    const bbMid = smaBB[i];
+    const std = stdBB[i];
+    const bbUpper = !isNaN(bbMid) && !isNaN(std) ? bbMid + bbStdDev * std : NaN;
+    const bbLower = !isNaN(bbMid) && !isNaN(std) ? bbMid - bbStdDev * std : NaN;
     const bbWidth = !isNaN(bbUpper) && !isNaN(bbLower) && bbMid > 0 ? ((bbUpper - bbLower) / bbMid) * 100 : NaN;
+
+    const finalUpper = isNaN(bbUpper) ? candles[i].close * 1.02 : bbUpper;
+    const finalLower = isNaN(bbLower) ? candles[i].close * 0.98 : bbLower;
+    const bandRange = finalUpper - finalLower;
+    const bbPercentB = bandRange > 0 ? (candles[i].close - finalLower) / bandRange : 0.5;
 
     indicators.push({
       rsi: isNaN(rsi[i]) ? 50 : rsi[i],
@@ -398,10 +410,11 @@ export function computeIndicators(candles: Candle[]): {
       ema21: isNaN(ema21[i]) ? candles[i].close : ema21[i],
       ema50: isNaN(ema50[i]) ? candles[i].close : ema50[i],
       ema200: isNaN(ema200[i]) ? candles[i].close : ema200[i],
-      bbUpper: isNaN(bbUpper) ? candles[i].close * 1.02 : bbUpper,
+      bbUpper: finalUpper,
       bbMiddle: isNaN(bbMid) ? candles[i].close : bbMid,
-      bbLower: isNaN(bbLower) ? candles[i].close * 0.98 : bbLower,
+      bbLower: finalLower,
       bbWidth: isNaN(bbWidth) ? 3.5 : bbWidth,
+      bbPercentB,
       atr: isNaN(atr[i]) ? candles[i].close * 0.02 : atr[i],
       atrPercent: isNaN(atrPercent[i]) ? 2.0 : atrPercent[i],
       obv: obv[i],

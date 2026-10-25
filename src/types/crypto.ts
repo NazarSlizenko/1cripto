@@ -3,6 +3,110 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export type CryptoSymbol =
+  | 'BTCUSDT'
+  | 'ETHUSDT'
+  | 'SOLUSDT'
+  | 'BNBUSDT'
+  | 'XRPUSDT'
+  | 'DOGEUSDT'
+  | 'ADAUSDT'
+  | 'AVAXUSDT';
+
+export interface CryptoAssetInfo {
+  symbol: CryptoSymbol;
+  baseAsset: string;
+  name: string;
+  coinbaseProduct: string;
+  krakenPair: string;
+  seedPrice: number;
+  decimals: number;
+}
+
+export const CRYPTO_ASSETS: CryptoAssetInfo[] = [
+  {
+    symbol: 'BTCUSDT',
+    baseAsset: 'BTC',
+    name: 'Bitcoin',
+    coinbaseProduct: 'BTC-USD',
+    krakenPair: 'XBTUSD',
+    seedPrice: 84200,
+    decimals: 2,
+  },
+  {
+    symbol: 'ETHUSDT',
+    baseAsset: 'ETH',
+    name: 'Ethereum',
+    coinbaseProduct: 'ETH-USD',
+    krakenPair: 'ETHUSD',
+    seedPrice: 2680,
+    decimals: 2,
+  },
+  {
+    symbol: 'SOLUSDT',
+    baseAsset: 'SOL',
+    name: 'Solana',
+    coinbaseProduct: 'SOL-USD',
+    krakenPair: 'SOLUSD',
+    seedPrice: 186,
+    decimals: 2,
+  },
+  {
+    symbol: 'BNBUSDT',
+    baseAsset: 'BNB',
+    name: 'BNB',
+    coinbaseProduct: 'BNB-USD',
+    krakenPair: 'BNBUSD',
+    seedPrice: 615,
+    decimals: 2,
+  },
+  {
+    symbol: 'XRPUSDT',
+    baseAsset: 'XRP',
+    name: 'Ripple',
+    coinbaseProduct: 'XRP-USD',
+    krakenPair: 'XRPUSD',
+    seedPrice: 2.45,
+    decimals: 4,
+  },
+  {
+    symbol: 'DOGEUSDT',
+    baseAsset: 'DOGE',
+    name: 'Dogecoin',
+    coinbaseProduct: 'DOGE-USD',
+    krakenPair: 'XDGUSD',
+    seedPrice: 0.265,
+    decimals: 4,
+  },
+  {
+    symbol: 'ADAUSDT',
+    baseAsset: 'ADA',
+    name: 'Cardano',
+    coinbaseProduct: 'ADA-USD',
+    krakenPair: 'ADAUSD',
+    seedPrice: 0.785,
+    decimals: 4,
+  },
+  {
+    symbol: 'AVAXUSDT',
+    baseAsset: 'AVAX',
+    name: 'Avalanche',
+    coinbaseProduct: 'AVAX-USD',
+    krakenPair: 'AVAXUSD',
+    seedPrice: 25.4,
+    decimals: 2,
+  },
+];
+
+export function formatCryptoPrice(price: number, symbol: CryptoSymbol = 'BTCUSDT'): string {
+  const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol);
+  const decimals = asset ? asset.decimals : price < 10 ? 4 : 2;
+  return price.toLocaleString('en-US', {
+    minimumFractionDigits: decimals > 2 ? 3 : 0,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export interface Candle {
   timestamp: number;
   open: number;
@@ -25,6 +129,7 @@ export interface Indicators {
   bbMiddle: number;
   bbLower: number;
   bbWidth: number;
+  bbPercentB: number;
   atr: number;
   atrPercent: number;
   obv: number;
@@ -36,125 +141,100 @@ export interface Indicators {
 export type VolatilityRegime = 'COMPRESSION' | 'NORMAL' | 'EXPANSION' | 'EXTREME';
 
 export interface VolatilityMetrics {
-  parkinsonVolAnnualized: number; // Based on High-Low extremes
-  garmanKlassVolAnnualized: number; // Based on OHLC jump
-  closeToCloseVolAnnualized: number; // Standard sample std deviation
+  parkinsonVolAnnualized: number;
+  garmanKlassVolAnnualized: number;
+  closeToCloseVolAnnualized: number;
   currentRegime: VolatilityRegime;
   regimeDescription: string;
-  var95: number; // 95% 1-day Value at Risk (%)
-  var99: number; // 99% Value at Risk (%)
-  cvar95: number; // Expected Shortfall (%)
+  var95: number;
+  var99: number;
+  cvar95: number;
   skewness: number;
   kurtosis: number;
-  efficiencyRatioGK: number; // Relative efficiency of GK vs CC (~7.4x theoretical)
+  efficiencyRatioGK: number;
 }
 
-export type MLModelType = 'gbdt' | 'lstm' | 'hybrid';
-
-export interface ModelHyperparameters {
-  lookbackWindow: number; // Sequence length / lag count (e.g. 14 - 30)
-  forecastHorizon: number; // Forward forecast steps (e.g. 7 - 24)
-  learningRate: number; // Step shrinkage (0.01 - 0.2)
-  iterations: number; // Number of trees in GBDT or epochs in LSTM
-  treeDepth: number; // Max depth for GBDT (2 - 5)
-  lstmHiddenUnits: number; // Hidden dimension for LSTM (8 - 32)
+export interface RsiBbStrategyConfig {
+  enabled: boolean;
+  rsiPeriod: number;
+  rsiOversold: number;
+  rsiOverbought: number;
+  bbPeriod: number;
+  bbStdDev: number;
+  requireStrictTouch: boolean;
 }
 
-export interface ForecastPoint {
-  timestamp: number;
-  price: number;
-  lower80: number;
-  upper80: number;
-  lower95: number;
-  upper95: number;
+export type BjMaType = 'EMA' | 'HEMA' | 'SMA' | 'HMA' | 'WMA' | 'DEMA' | 'VWMA' | 'VWAP' | 'T3';
+
+export interface BjBotConfig {
+  enabled: boolean;
+  longTrades: boolean;
+  shortTrades: boolean;
+  useLimit: boolean;
+  trailStop: boolean;
+  flip: boolean;
+  rnr: number; // Reward to Risk Ratio (default 1.0)
+  riskM: number; // ATR Risk Multiplier (default 1.0)
+  swingLookback: number; // Swing High/Low Lookback (default 5)
+  atrLen: number; // ATR period (default 14)
+  trailStopSize: number; // ATR Trailing Stop Multiplier (default 1.0)
+  trailSource: 'High/Low' | 'Close' | 'Open';
+  rrExit: number; // R:R to trigger trail (default 0.0)
+  maType1: BjMaType; // default 'EMA'
+  maLength1: number; // default 21
+  maType2: BjMaType; // default 'EMA'
+  maLength2: number; // default 50
+  drawEntry: boolean;
+  exitLvl: boolean;
 }
 
-export interface FeatureImportanceItem {
-  feature: string;
-  name: string;
-  importance: number; // 0 to 1
-  category: 'volatility' | 'momentum' | 'trend' | 'volume';
+export type BjBotSignalType = 'LONG' | 'SHORT' | 'L EXIT' | 'S EXIT';
+
+export interface BjBotBarPoint {
+  ma1: number;
+  ma2: number;
+  ma1Rising: boolean;
+  ma2Rising: boolean;
+  entryPrice: number | null;
+  stopPrice: number | null;
+  targetPrice: number | null;
+  triggerExitPrice: number | null;
+  signal: BjBotSignalType | null;
 }
 
-export interface ModelMetrics {
-  mae: number;
-  rmse: number;
-  mape: number;
-  directionalAccuracy: number; // Hit Ratio (% of correct up/down direction)
-  r2: number;
-  trainLoss: number;
-  valLoss: number;
-}
+export type StrategySignalType =
+  | 'OVERSOLD_BUY'
+  | 'OVERBOUGHT_SELL'
+  | 'LONG'
+  | 'SHORT'
+  | 'L EXIT'
+  | 'S EXIT';
 
-export type TradingSignal = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL';
-
-export interface TradeRecommendation {
-  direction: 'LONG' | 'SHORT' | 'NEUTRAL';
-  entryPrice: number;
-  stopLossPrice: number;
-  takeProfit1Price: number;
-  takeProfit2Price: number;
-  riskRewardRatio: number;
-  riskPct: number;
-  profitPct1: number;
-  profitPct2: number;
-  recommendedPositionSizePct: number;
-  rationale: string;
-  invalidationCondition: string;
-  confidenceScore: number; // 0 to 100
-}
-
-export interface TrainingProgressState {
-  currentEpoch: number;
-  totalEpochs: number;
-  currentLoss: number;
-  lossHistory: number[];
-  status: 'idle' | 'training' | 'completed';
-}
-
-export interface ForecastResult {
-  modelType: MLModelType;
-  lastActualPrice: number;
-  targetPrice: number;
-  targetReturnPct: number;
-  signal: TradingSignal;
-  bullishProbability: number; // 0 to 1
-  forecastPoints: ForecastPoint[];
-  metrics: ModelMetrics;
-  featureImportance: FeatureImportanceItem[];
-  trainingLossHistory: number[];
-  volatilityMetrics: VolatilityMetrics;
-  computedAt: number;
-  tradeRecommendation: TradeRecommendation;
-}
-
-export interface SimulatedTrade {
+export interface StrategySignalEvent {
   id: string;
+  strategyName: 'RSI+BB' | 'Bj Bot';
+  symbol: CryptoSymbol;
+  baseAsset: string;
   timestamp: number;
-  type: 'BUY' | 'SELL';
+  candleTimestamp: number;
+  type: StrategySignalType;
   price: number;
-  signalPrice: number;
-  pnlPct?: number;
-  cumulativeReturnPct: number;
+  rsiValue: number;
+  bbUpper: number;
+  bbLower: number;
+  percentB: number;
+  stopPrice?: number;
+  targetPrice?: number;
+  timeframe: TimeframeId;
+  telegramSent: boolean;
+  telegramError?: string;
 }
 
-export interface BacktestResult {
-  totalReturnPct: number;
-  benchmarkReturnPct: number; // Buy and hold BTC
-  alphaPct: number;
-  sharpeRatio: number;
-  maxDrawdownPct: number;
-  winRatePct: number;
-  totalTrades: number;
-  profitFactor: number;
-  equityCurve: Array<{
-    timestamp: number;
-    strategyEquity: number;
-    hodlEquity: number;
-    price: number;
-  }>;
-  trades: SimulatedTrade[];
+export interface TelegramConfig {
+  botToken: string;
+  chatId: string;
+  autoNotify: boolean;
 }
 
 export type ExchangeId = 'binance' | 'coinbase' | 'kraken' | 'coingecko';
-export type TimeframeId = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type TimeframeId = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
