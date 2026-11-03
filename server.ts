@@ -23,6 +23,7 @@ import { computeBjBotSeries } from './src/math/bjBot';
 import {
   evaluateCandleConfluence,
   formatSignalTelegramMessage,
+  processTelegramBotUpdate,
   sendTelegramAlert,
 } from './src/services/telegramService';
 
@@ -369,12 +370,57 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
+  let tgUpdateOffset = 0;
+  let isPollingTg = false;
+  let tgConflictBackoffUntil = 0;
+
+  async function pollServerTelegramUpdates(): Promise<void> {
+    if (isPollingTg || Date.now() < tgConflictBackoffUntil) return;
+    const token = botState.telegramConfig.botToken.trim();
+    if (!token) return;
+
+    isPollingTg = true;
+    try {
+      const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${tgUpdateOffset}&timeout=0&allowed_updates=${encodeURIComponent(
+        JSON.stringify(['message', 'callback_query'])
+      )}`;
+      const res = await fetch(url);
+      if (res.status === 409) {
+        // Другой экземпляр бота уже опрашивает этот токен
+        tgConflictBackoffUntil = Date.now() + 20000;
+        return;
+      }
+      const data = await res.json();
+      if (res.ok && data.ok && Array.isArray(data.result)) {
+        for (const update of data.result) {
+          if (typeof update.update_id === 'number') {
+            tgUpdateOffset = Math.max(tgUpdateOffset, update.update_id + 1);
+          }
+          await processTelegramBotUpdate(
+            update,
+            token,
+            botState.exchange,
+            botState.strategyConfig,
+            botState.bjConfig
+          );
+        }
+      }
+    } catch {
+      // ignore transient network errors
+    } finally {
+      isPollingTg = false;
+    }
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     // Запускаем круглосуточный фоновый опрос всех криптовалют на сервере
     runServerMarketScan();
     setInterval(runServerMarketScan, SERVER_SCAN_INTERVAL_MS);
+    // Опрос нажатий кнопок в Telegram-боте (выбор валюты и стратегии для статистики 30м)
+    setInterval(pollServerTelegramUpdates, 2500);
   });
 }
 
 startServer();
+

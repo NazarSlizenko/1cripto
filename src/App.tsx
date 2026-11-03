@@ -14,6 +14,7 @@ import {
   formatCryptoPrice,
   Indicators,
   RsiBbStrategyConfig,
+  StrategyPairStats,
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
@@ -22,10 +23,18 @@ import { fetchHistoricalCandles, fetchLatestSpotPrice } from './services/exchang
 import { computeIndicators } from './math/indicators';
 import { computeBjBotSeries } from './math/bjBot';
 import {
+  evaluateStrategyStats,
+  formatTelegramBothStrategiesReport,
+  formatTelegramStrategyStatsReport,
+} from './math/strategyStats';
+import {
+  buildStatsResultInlineKeyboard,
   detectRsiBbSignals,
   evaluateCandleConfluence,
   formatSignalTelegramMessage,
+  processTelegramBotUpdate,
   sendTelegramAlert,
+  sendTelegramStatsInteractiveMenu,
 } from './services/telegramService';
 import { InteractiveChart } from './components/InteractiveChart';
 import { RightControlPanel } from './components/RightControlPanel';
@@ -42,6 +51,11 @@ export default function App() {
 
   // Свечи по всем криптовалютам для одновременного поиска сигналов
   const [candlesBySymbol, setCandlesBySymbol] = useState<
+    Partial<Record<CryptoSymbol, Candle[]>>
+  >({});
+
+  // Отдельный буфер 30-минутных свечей (30m) по всем криптовалютам для расчета статистики успешности сделок
+  const [candles30mBySymbol, setCandles30mBySymbol] = useState<
     Partial<Record<CryptoSymbol, Candle[]>>
   >({});
 
@@ -134,11 +148,19 @@ export default function App() {
 
   const sentSignalIdsRef = useRef<Set<string>>(new Set());
   const [sentSignalIds, setSentSignalIds] = useState<string[]>([]);
+  const [hasServerBackend, setHasServerBackend] = useState<boolean>(true);
 
   // При загрузке получаем состояние серверного 24/7 сканера (уже отправленные сигналы и серверные настройки)
   useEffect(() => {
     fetch('/api/bot/state')
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r.ok) {
+          setHasServerBackend(false);
+          return null;
+        }
+        setHasServerBackend(true);
+        return r.json();
+      })
       .then((data) => {
         if (!data) return;
         if (Array.isArray(data.sentSignalIds)) {
@@ -155,9 +177,46 @@ export default function App() {
         }
       })
       .catch(() => {
-        // ignore if offline
+        setHasServerBackend(false);
       });
   }, []);
+
+  // Резервный опрос кнопок Telegram-бота из браузера (если приложение запущено как Static Site без server.ts)
+  useEffect(() => {
+    if (hasServerBackend || !telegramConfig.botToken.trim()) return;
+    let offset = 0;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const token = telegramConfig.botToken.trim();
+        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&timeout=0`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.result)) {
+          for (const upd of data.result) {
+            if (typeof upd.update_id === 'number') {
+              offset = Math.max(offset, upd.update_id + 1);
+            }
+            await processTelegramBotUpdate(
+              upd,
+              token,
+              exchange,
+              strategyConfig,
+              bjConfig
+            );
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        busy = false;
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [hasServerBackend, telegramConfig.botToken, exchange, strategyConfig, bjConfig]);
 
   // Автоматическая синхронизация всех настроек со 24/7 сервером (server.ts)
   useEffect(() => {
@@ -250,6 +309,39 @@ export default function App() {
 
   const activeIndicators = indicatorsBySymbol[symbol] || [];
   const activeBjBars = bjDataBySymbol[symbol]?.bars || [];
+
+  // Статистика успешности сделок (интервал 30 мин) для каждой валюты и каждой стратегии
+  const stats30mBySymbol = useMemo(() => {
+    const result: Partial<
+      Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
+    > = {};
+    for (const asset of CRYPTO_ASSETS) {
+      const c30 =
+        candles30mBySymbol[asset.symbol] ||
+        (timeframe === '30m' ? candlesBySymbol[asset.symbol] : undefined);
+      if (c30 && c30.length > 0) {
+        result[asset.symbol] = {
+          rsi_bb: evaluateStrategyStats(
+            c30,
+            strategyConfig,
+            bjConfig,
+            asset.symbol,
+            'rsi_bb',
+            '30m'
+          ),
+          bj_bot: evaluateStrategyStats(
+            c30,
+            strategyConfig,
+            bjConfig,
+            asset.symbol,
+            'bj_bot',
+            '30m'
+          ),
+        };
+      }
+    }
+    return result;
+  }, [candles30mBySymbol, candlesBySymbol, timeframe, strategyConfig, bjConfig]);
 
   // Все сигналы по выбранной на графике монете (чтобы на графике отображались все метки BUY/SELL и LONG/SHORT/L EXIT/S EXIT)
   const activeSymbolSignals: StrategySignalEvent[] = useMemo(() => {
@@ -380,6 +472,36 @@ export default function App() {
         }
         return next;
       });
+
+      if (timeframe === '30m') {
+        setCandles30mBySymbol((prev) => {
+          const next = { ...prev, [symbol]: fetchedActive };
+          for (const item of otherResults) {
+            next[item.sym] = item.candles;
+          }
+          return next;
+        });
+      } else {
+        // Если на графике выбран другой таймфрейм, подгружаем 30m свечи для точной 30-минутной статистики
+        const results30m = await Promise.all(
+          CRYPTO_ASSETS.map(async (asset) => {
+            const data30 = await fetchHistoricalCandles(
+              exchange,
+              '30m',
+              180,
+              asset.symbol
+            );
+            return { sym: asset.symbol, candles: data30.candles };
+          })
+        );
+        setCandles30mBySymbol((prev) => {
+          const next = { ...prev };
+          for (const item of results30m) {
+            next[item.sym] = item.candles;
+          }
+          return next;
+        });
+      }
     } catch {
       // silent retry on next tick
     }
@@ -588,6 +710,62 @@ export default function App() {
     }
   };
 
+  // Отправка интерактивного меню выбора валюты и стратегии в Telegram-бот
+  const handleSendTelegramStatsMenu = async () => {
+    setIsSendingTelegram(true);
+    setTelegramFeedback(null);
+    const res = await sendTelegramStatsInteractiveMenu(telegramConfig);
+    setIsSendingTelegram(false);
+    if (res.ok) {
+      setTelegramFeedback({
+        type: 'success',
+        message:
+          'Кнопка и интерактивное меню выбора валюты и стратегии отправлены в ваш Telegram-бот!',
+      });
+    } else {
+      setTelegramFeedback({
+        type: 'error',
+        message: res.error || 'Ошибка отправки меню в Telegram',
+      });
+    }
+  };
+
+  // Отправка конкретного отчета статистики 30м в Telegram с кнопками переключения
+  const handleSendSelectedStatsTelegram = async (
+    targetSymbol: CryptoSymbol,
+    mode: 'rsi_bb' | 'bj_bot' | 'both'
+  ) => {
+    const pairStats = stats30mBySymbol[targetSymbol];
+    if (!pairStats) return;
+    setIsSendingTelegram(true);
+    setTelegramFeedback(null);
+
+    const htmlReport =
+      mode === 'rsi_bb'
+        ? formatTelegramStrategyStatsReport(pairStats.rsi_bb)
+        : mode === 'bj_bot'
+        ? formatTelegramStrategyStatsReport(pairStats.bj_bot)
+        : formatTelegramBothStrategiesReport(pairStats.rsi_bb, pairStats.bj_bot);
+
+    const res = await sendTelegramAlert(
+      telegramConfig,
+      htmlReport,
+      buildStatsResultInlineKeyboard(targetSymbol, mode)
+    );
+    setIsSendingTelegram(false);
+    if (res.ok) {
+      setTelegramFeedback({
+        type: 'success',
+        message: `Статистика ${pairStats.rsi_bb.baseAsset}/USDT (30м) с кнопками отправлена в Telegram!`,
+      });
+    } else {
+      setTelegramFeedback({
+        type: 'error',
+        message: res.error || 'Ошибка отправки статистики в Telegram',
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#060d1f] text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
       {/* Subtle Ambient Cyan Glow */}
@@ -643,9 +821,12 @@ export default function App() {
             onUpdateTelegram={handleUpdateTelegram}
             onSendTestTelegram={handleSendTestTelegram}
             onSendManualSummaryTelegram={handleSendManualSummaryTelegram}
+            onSendTelegramStatsMenu={handleSendTelegramStatsMenu}
+            onSendSelectedStatsTelegram={handleSendSelectedStatsTelegram}
             isSendingTelegram={isSendingTelegram}
             telegramFeedback={telegramFeedback}
             allSignals={allSignals}
+            stats30mBySymbol={stats30mBySymbol}
             timeframe={timeframe}
           />
         </div>

@@ -238,3 +238,43 @@ export interface TelegramConfig {
 
 export type ExchangeId = 'binance' | 'coinbase' | 'kraken' | 'coingecko';
 export type TimeframeId = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+
+export type StrategyId = 'rsi_bb' | 'bj_bot';
+
+export interface CompletedTradeRecord {
+  id: string;
+  symbol: CryptoSymbol;
+  baseAsset: string;
+  strategyId: StrategyId;
+  direction: 'LONG' | 'SHORT';
+  entryTimestamp: number;
+  exitTimestamp: number;
+  entryPrice: number;
+  exitPrice: number;
+  stopPrice?: number;
+  targetPrice?: number;
+  pnlPercent: number;
+  isWin: boolean;
+  exitReason: 'TP' | 'SL' | 'SIGNAL';
+}
+
+export interface StrategyPairStats {
+  symbol: CryptoSymbol;
+  baseAsset: string;
+  coinName: string;
+  strategyId: StrategyId;
+  strategyTitle: string;
+  timeframe: TimeframeId;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+  totalPnlPercent: number;
+  avgWinPercent: number;
+  avgLossPercent: number;
+  profitFactor: number;
+  bestTradePercent: number;
+  worstTradePercent: number;
+  trades: CompletedTradeRecord[];
+}
+

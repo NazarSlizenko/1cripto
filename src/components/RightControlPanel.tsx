@@ -12,6 +12,7 @@ import {
   formatCryptoPrice,
   Indicators,
   RsiBbStrategyConfig,
+  StrategyPairStats,
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
@@ -26,6 +27,7 @@ import {
   ChevronDown,
   Check,
   Info,
+  TrendingUp,
 } from 'lucide-react';
 
 interface RightControlPanelProps {
@@ -47,9 +49,17 @@ interface RightControlPanelProps {
   onUpdateTelegram: (cfg: TelegramConfig) => void;
   onSendTestTelegram: () => Promise<void>;
   onSendManualSummaryTelegram: () => Promise<void>;
+  onSendTelegramStatsMenu: () => Promise<void>;
+  onSendSelectedStatsTelegram: (
+    targetSymbol: CryptoSymbol,
+    mode: 'rsi_bb' | 'bj_bot' | 'both'
+  ) => Promise<void>;
   isSendingTelegram: boolean;
   telegramFeedback: { type: 'success' | 'error'; message: string } | null;
   allSignals: StrategySignalEvent[];
+  stats30mBySymbol: Partial<
+    Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
+  >;
   timeframe: TimeframeId;
 }
 
@@ -72,15 +82,28 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   onUpdateTelegram,
   onSendTestTelegram,
   onSendManualSummaryTelegram,
+  onSendTelegramStatsMenu,
+  onSendSelectedStatsTelegram,
   isSendingTelegram,
   telegramFeedback,
   allSignals,
+  stats30mBySymbol,
   timeframe,
 }) => {
-  const [activeTab, setActiveTab] = useState<'strategy' | 'telegram' | 'signals'>('strategy');
+  const [activeTab, setActiveTab] = useState<
+    'strategy' | 'stats30m' | 'telegram' | 'signals'
+  >('strategy');
   const [showTgHelp, setShowTgHelp] = useState(false);
   const [isCoinDropdownOpen, setIsCoinDropdownOpen] = useState(false);
-  const [expandedStrategyInfo, setExpandedStrategyInfo] = useState<'rsi_bb' | 'bj_bot' | null>(null);
+  const [expandedStrategyInfo, setExpandedStrategyInfo] = useState<
+    'rsi_bb' | 'bj_bot' | null
+  >(null);
+
+  // Состояние фильтров в разделе «Статистика 30м»
+  const [selectedStatsStrategy, setSelectedStatsStrategy] = useState<
+    'rsi_bb' | 'bj_bot' | 'both'
+  >('rsi_bb');
+  const [statsSubView, setStatsSubView] = useState<'all_coins' | 'trades'>('all_coins');
 
   const assetInfo = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
   const isPositive24h = changePercent24h >= 0;
@@ -89,6 +112,13 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
   // Выборка максимум 50 последних сигналов
   const latest50Signals = allSignals.slice(0, 50);
+
+  // Статистика 30m для активной монеты
+  const activePairStats = stats30mBySymbol[symbol];
+  const currentSingleStats: StrategyPairStats | undefined =
+    selectedStatsStrategy === 'bj_bot'
+      ? activePairStats?.bj_bot
+      : activePairStats?.rsi_bb;
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -248,55 +278,67 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
         )}
       </div>
 
-      {/* ПАНЕЛЬ 2 (Crisp White Panel): Стратегии, Telegram-Бот и 50 последних сигналов */}
+      {/* ПАНЕЛЬ 2 (Crisp White Panel): Стратегии, Статистика 30м, Telegram-Бот и 50 последних сигналов */}
       <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 flex flex-col flex-1">
         {/* Навигация по разделам панели */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl mb-4">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-4">
           <button
             onClick={() => setActiveTab('strategy')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
               activeTab === 'strategy'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
             }`}
           >
-            <Sliders className="w-3.5 h-3.5" />
+            <Sliders className="w-3.5 h-3.5 shrink-0" />
             <span>Стратегии</span>
           </button>
 
           <button
+            onClick={() => setActiveTab('stats30m')}
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+              activeTab === 'stats30m'
+                ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                : 'text-slate-600 hover:text-slate-950'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+            <span>Статистика 30м</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('telegram')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
               activeTab === 'telegram'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
             }`}
           >
-            <Bell className="w-3.5 h-3.5" />
-            <span>Telegram-Бот</span>
+            <Bell className="w-3.5 h-3.5 shrink-0" />
+            <span>ТГ-Бот</span>
           </button>
 
           <button
             onClick={() => setActiveTab('signals')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
               activeTab === 'signals'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
             }`}
           >
-            <BarChart2 className="w-3.5 h-3.5" />
+            <BarChart2 className="w-3.5 h-3.5 shrink-0" />
             <span>Сигналы ({latest50Signals.length})</span>
           </button>
         </div>
 
-        {/* ВКЛАДКА 1: Список активных стратегий с дополнительным меню описания работы каждой стратегии */}
+        {/* ВКЛАДКА 1: Список активных стратегий с дополнительным меню описания работы и быстрым переходом к статистике 30м */}
         {activeTab === 'strategy' && (
           <div className="space-y-3 flex-1">
             {/* Стратегия №1: RSI + Полосы Боллинджера */}
             <div className="rounded-xl border border-slate-200 hover:border-cyan-400 transition-colors overflow-hidden">
               <div className="flex items-center justify-between p-3.5 gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-bold text-slate-950">
                       1. RSI + Полосы Боллинджера
                     </span>
@@ -320,6 +362,29 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   <div className="text-xs font-mono text-slate-500 mt-0.5">
                     RSI({strategyConfig.rsiPeriod}) ≤{strategyConfig.rsiOversold} / ≥{strategyConfig.rsiOverbought} · BB({strategyConfig.bbPeriod}, {strategyConfig.bbStdDev.toFixed(1)}σ)
                   </div>
+
+                  {activePairStats?.rsi_bb && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
+                      <span className="text-slate-600 font-sans">
+                        Успешность 30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-600">
+                          {activePairStats.rsi_bb.winRate.toFixed(1)}%
+                        </strong>{' '}
+                        ({activePairStats.rsi_bb.winningTrades}W /{' '}
+                        {activePairStats.rsi_bb.losingTrades}L)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStatsStrategy('rsi_bb');
+                          setActiveTab('stats30m');
+                        }}
+                        className="text-[11px] font-sans font-semibold text-cyan-600 hover:text-cyan-800 whitespace-nowrap shrink-0"
+                      >
+                        Статистика 30м →
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <input
@@ -369,7 +434,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
             <div className="rounded-xl border border-slate-200 hover:border-cyan-400 transition-colors overflow-hidden">
               <div className="flex items-center justify-between p-3.5 gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-bold text-slate-950">
                       2. Bj Bot (3Commas Bot)
                     </span>
@@ -393,6 +458,29 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   <div className="text-xs font-mono text-slate-500 mt-0.5">
                     {bjConfig.maType1}({bjConfig.maLength1}) × {bjConfig.maType2}({bjConfig.maLength2}) · R:R {bjConfig.rnr.toFixed(1)} · ATR({bjConfig.atrLen})
                   </div>
+
+                  {activePairStats?.bj_bot && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
+                      <span className="text-slate-600 font-sans">
+                        Успешность 30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-600">
+                          {activePairStats.bj_bot.winRate.toFixed(1)}%
+                        </strong>{' '}
+                        ({activePairStats.bj_bot.winningTrades}W /{' '}
+                        {activePairStats.bj_bot.losingTrades}L)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStatsStrategy('bj_bot');
+                          setActiveTab('stats30m');
+                        }}
+                        className="text-[11px] font-sans font-semibold text-cyan-600 hover:text-cyan-800 whitespace-nowrap shrink-0"
+                      >
+                        Статистика 30м →
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <input
@@ -456,13 +544,361 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </div>
         )}
 
-        {/* ВКЛАДКА 2: Настройка Telegram-Бота */}
+        {/* ВКЛАДКА 2: СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН) ДЛЯ КАЖДОЙ ВАЛЮТЫ И КАЖДОЙ СТРАТЕГИИ */}
+        {activeTab === 'stats30m' && (
+          <div className="flex-1 flex flex-col space-y-3.5">
+            {/* 1. Выбор криптовалюты */}
+            <div>
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
+                <span>1. Выберите валюту (интервал 30 мин)</span>
+                <span className="font-mono text-slate-900 font-bold">
+                  {assetInfo.baseAsset}/USDT
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {CRYPTO_ASSETS.map((a) => (
+                  <button
+                    key={a.symbol}
+                    type="button"
+                    onClick={() => onSelectSymbol(a.symbol)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 ${
+                      symbol === a.symbol
+                        ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-950'
+                    }`}
+                  >
+                    {a.baseAsset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Выбор стратегии */}
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 mb-1.5">
+                2. Выберите стратегию
+              </div>
+              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatsStrategy('rsi_bb')}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                    selectedStatsStrategy === 'rsi_bb'
+                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                >
+                  1. RSI + BB
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatsStrategy('bj_bot')}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                    selectedStatsStrategy === 'bj_bot'
+                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                >
+                  2. Bj Bot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatsStrategy('both')}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                    selectedStatsStrategy === 'both'
+                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                >
+                  Обе стратегии
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Карточка показателей успешности за 30 мин */}
+            {selectedStatsStrategy !== 'both' && currentSingleStats && (
+              <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/60 space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {currentSingleStats.baseAsset}/USDT · {currentSingleStats.strategyTitle}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Таймфрейм 30 мин · Завершенных сделок: {currentSingleStats.totalTrades}
+                    </div>
+                  </div>
+                  <div className="text-right font-mono tabular-nums">
+                    <div className="text-xl font-bold text-emerald-600">
+                      {currentSingleStats.winRate.toFixed(1)}%
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-sans">
+                      Успешность (Win Rate)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Полоса соотношения успешных / убыточных сделок */}
+                <div className="w-full h-2.5 bg-rose-200 rounded-full overflow-hidden flex">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, currentSingleStats.winRate))}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 pt-1 text-xs font-mono tabular-nums">
+                  <div>
+                    <div className="text-[10px] font-sans text-slate-400">Побед / Убыт</div>
+                    <div className="font-bold text-slate-900 mt-0.5">
+                      <span className="text-emerald-600">
+                        {currentSingleStats.winningTrades}W
+                      </span>{' '}
+                      /{' '}
+                      <span className="text-rose-600">
+                        {currentSingleStats.losingTrades}L
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-sans text-slate-400">Сумм. PnL</div>
+                    <div
+                      className={`font-bold mt-0.5 ${
+                        currentSingleStats.totalPnlPercent >= 0
+                          ? 'text-emerald-600'
+                          : 'text-rose-600'
+                      }`}
+                    >
+                      {currentSingleStats.totalPnlPercent >= 0 ? '+' : ''}
+                      {currentSingleStats.totalPnlPercent.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-sans text-slate-400">Профит-факт.</div>
+                    <div className="font-bold text-slate-900 mt-0.5">
+                      {currentSingleStats.profitFactor.toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-sans text-slate-400">Ср. W / L</div>
+                    <div className="font-bold text-slate-900 mt-0.5">
+                      +{currentSingleStats.avgWinPercent.toFixed(1)}% /{' '}
+                      {currentSingleStats.avgLossPercent.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Режим сравнения обеих стратегий для выбранной валюты */}
+            {selectedStatsStrategy === 'both' && activePairStats && (
+              <div className="grid grid-cols-2 gap-2.5">
+                {[activePairStats.rsi_bb, activePairStats.bj_bot].map((st) => (
+                  <div
+                    key={st.strategyId}
+                    className="rounded-xl border border-slate-200 p-3 bg-slate-50/60 space-y-1.5 font-mono tabular-nums"
+                  >
+                    <div className="text-xs font-sans font-bold text-slate-900 truncate">
+                      {st.strategyTitle}
+                    </div>
+                    <div className="text-lg font-bold text-emerald-600">
+                      {st.winRate.toFixed(1)}%{' '}
+                      <span className="text-[11px] font-normal text-slate-500">
+                        ({st.winningTrades}W/{st.losingTrades}L)
+                      </span>
+                    </div>
+                    <div className="text-xs flex justify-between">
+                      <span className="font-sans text-slate-400">PnL 30м:</span>
+                      <span
+                        className={`font-bold ${
+                          st.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {st.totalPnlPercent >= 0 ? '+' : ''}
+                        {st.totalPnlPercent.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="text-xs flex justify-between">
+                      <span className="font-sans text-slate-400">PF:</span>
+                      <span className="font-semibold text-slate-800">
+                        {st.profitFactor.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 4. Переключатель: Сводная таблица всех валют (30м) ИЛИ История сделок выбранной монеты */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setStatsSubView('all_coins')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                    statsSubView === 'all_coins'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Все валюты (30м)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatsSubView('trades')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                    statsSubView === 'trades'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Сделки {assetInfo.baseAsset} (30м)
+                </button>
+              </div>
+            </div>
+
+            {statsSubView === 'all_coins' ? (
+              <div className="divide-y divide-slate-100 max-h-[210px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
+                {CRYPTO_ASSETS.map((a) => {
+                  const row = stats30mBySymbol[a.symbol];
+                  if (!row) return null;
+                  const r = row.rsi_bb;
+                  const b = row.bj_bot;
+                  const isSelected = a.symbol === symbol;
+
+                  return (
+                    <button
+                      key={a.symbol}
+                      type="button"
+                      onClick={() => onSelectSymbol(a.symbol)}
+                      className={`w-full py-2 px-2 flex items-center justify-between rounded-lg transition-colors text-left ${
+                        isSelected ? 'bg-cyan-50/90' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="font-bold text-slate-950 w-20 shrink-0">
+                        {a.baseAsset}/USDT
+                      </div>
+                      <div className="flex-1 flex items-center justify-end gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] font-sans text-slate-400 mr-1">
+                            RSI+BB:
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {r.winRate.toFixed(0)}%
+                          </span>{' '}
+                          <span
+                            className={`text-[11px] ${
+                              r.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}
+                          >
+                            ({r.totalPnlPercent >= 0 ? '+' : ''}
+                            {r.totalPnlPercent.toFixed(1)}%)
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-sans text-slate-400 mr-1">
+                            BjBot:
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {b.winRate.toFixed(0)}%
+                          </span>{' '}
+                          <span
+                            className={`text-[11px] ${
+                              b.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}
+                          >
+                            ({b.totalPnlPercent >= 0 ? '+' : ''}
+                            {b.totalPnlPercent.toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 max-h-[210px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
+                {(currentSingleStats?.trades || []).slice(0, 20).map((t) => (
+                  <div
+                    key={t.id}
+                    className="py-2 px-1.5 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            t.direction === 'LONG'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-amber-500 text-slate-950'
+                          }`}
+                        >
+                          {t.direction}
+                        </span>
+                        <span className="text-slate-900 font-semibold">
+                          ${formatCryptoPrice(t.entryPrice, symbol)} → $
+                          {formatCryptoPrice(t.exitPrice, symbol)}
+                        </span>
+                        <span className="text-[10px] font-sans text-slate-400">
+                          ({t.exitReason})
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {new Date(t.exitTimestamp).toLocaleString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`font-bold ${
+                        t.isWin ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {t.pnlPercent >= 0 ? '+' : ''}
+                      {t.pnlPercent.toFixed(2)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 5. Кнопки отправки статистики и интерактивного меню выбора в Telegram */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 mt-auto">
+              <button
+                type="button"
+                onClick={onSendTelegramStatsMenu}
+                disabled={isSendingTelegram}
+                className="py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Send className="w-3.5 h-3.5 shrink-0" />
+                <span>Кнопка выбора в ТГ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onSendSelectedStatsTelegram(symbol, selectedStatsStrategy)
+                }
+                disabled={isSendingTelegram}
+                className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              >
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                <span>Отчет {assetInfo.baseAsset} в ТГ</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ВКЛАДКА 3: Настройка Telegram-Бота */}
         {activeTab === 'telegram' && (
           <div className="space-y-4 flex-1 flex flex-col justify-between">
             <div className="space-y-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-900">
-                  Уведомления в Telegram
+                  Уведомления и кнопки в Telegram
                 </span>
                 <button
                   onClick={() => setShowTgHelp(!showTgHelp)}
@@ -478,6 +914,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   <div>1. Создайте бота в <strong>@BotFather</strong> и скопируйте <strong>Token</strong>.</div>
                   <div>2. Нажмите <code>/start</code> в диалоге с вашим ботом.</div>
                   <div>3. Узнайте ваш <strong>Chat ID</strong> через <strong>@userinfobot</strong>.</div>
+                  <div>4. В боте появится кнопка <strong>«📊 Статистика сделок (30 мин)»</strong> с выбором валюты и стратегии.</div>
                 </div>
               )}
 
@@ -548,29 +985,40 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-slate-100">
+            <div className="space-y-2 pt-3 border-t border-slate-100">
               <button
-                onClick={onSendTestTelegram}
+                onClick={onSendTelegramStatsMenu}
                 disabled={isSendingTelegram}
-                className="py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>Тест бота</span>
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>📊 Отправить кнопку статистики (30м) в ТГ-бот</span>
               </button>
 
-              <button
-                onClick={onSendManualSummaryTelegram}
-                disabled={isSendingTelegram}
-                className="py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-              >
-                <Bell className="w-3.5 h-3.5" />
-                <span>Сводка в ТГ</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={onSendTestTelegram}
+                  disabled={isSendingTelegram}
+                  className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Тест бота</span>
+                </button>
+
+                <button
+                  onClick={onSendManualSummaryTelegram}
+                  disabled={isSendingTelegram}
+                  className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Сводка в ТГ</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ВКЛАДКА 3: Максимум 50 последних сигналов по всем криптовалютам */}
+        {/* ВКЛАДКА 4: Максимум 50 последних сигналов по всем криптовалютам */}
         {activeTab === 'signals' && (
           <div className="flex-1 flex flex-col">
             {latest50Signals.length === 0 ? (

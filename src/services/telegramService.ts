@@ -14,7 +14,15 @@ import {
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
+  ExchangeId,
 } from '../types/crypto';
+import { fetchHistoricalCandles } from './exchangeService';
+import {
+  evaluateStrategyStats,
+  formatTelegramAllCoinsSummary,
+  formatTelegramBothStrategiesReport,
+  formatTelegramStrategyStatsReport,
+} from '../math/strategyStats';
 
 export interface LiveConfluenceStatus {
   isRsiOversold: boolean;
@@ -166,9 +174,111 @@ export function formatSignalTelegramMessage(
   ].join('\n');
 }
 
+export const TG_STATS_BUTTON_TEXT = '📊 Статистика сделок (30 мин)';
+
+export const DEFAULT_TG_REPLY_KEYBOARD = {
+  keyboard: [[{ text: TG_STATS_BUTTON_TEXT }]],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
+export function buildStatsCoinsInlineKeyboard() {
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < CRYPTO_ASSETS.length; i += 2) {
+    const pair = CRYPTO_ASSETS.slice(i, i + 2).map((a) => ({
+      text: `🪙 ${a.baseAsset}/USDT`,
+      callback_data: `stat_coin:${a.symbol}`,
+    }));
+    rows.push(pair);
+  }
+  rows.push([
+    {
+      text: '📋 Сводка по всем валютам (30м)',
+      callback_data: 'stat_all:summary',
+    },
+  ]);
+  return { inline_keyboard: rows };
+}
+
+export function buildStatsStrategyInlineKeyboard(symbol: CryptoSymbol) {
+  const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: `1️⃣ RSI + Полосы Боллинджера (${asset.baseAsset})`,
+          callback_data: `stat_show:${symbol}:rsi_bb`,
+        },
+      ],
+      [
+        {
+          text: `2️⃣ Bj Bot / 3Commas Bot (${asset.baseAsset})`,
+          callback_data: `stat_show:${symbol}:bj_bot`,
+        },
+      ],
+      [
+        {
+          text: `⚖️ Сравнить обе стратегии (${asset.baseAsset})`,
+          callback_data: `stat_show:${symbol}:both`,
+        },
+      ],
+      [
+        {
+          text: '⬅️ Выбрать другую валюту',
+          callback_data: 'stat_menu:coins',
+        },
+      ],
+    ],
+  };
+}
+
+export function buildStatsResultInlineKeyboard(
+  symbol: CryptoSymbol,
+  activeMode: 'rsi_bb' | 'bj_bot' | 'both'
+) {
+  const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
+  const switchRow: { text: string; callback_data: string }[] = [];
+
+  if (activeMode !== 'rsi_bb') {
+    switchRow.push({
+      text: '1️⃣ RSI + BB',
+      callback_data: `stat_show:${symbol}:rsi_bb`,
+    });
+  }
+  if (activeMode !== 'bj_bot') {
+    switchRow.push({
+      text: '2️⃣ Bj Bot',
+      callback_data: `stat_show:${symbol}:bj_bot`,
+    });
+  }
+  if (activeMode !== 'both') {
+    switchRow.push({
+      text: '⚖️ Обе',
+      callback_data: `stat_show:${symbol}:both`,
+    });
+  }
+
+  return {
+    inline_keyboard: [
+      switchRow,
+      [
+        {
+          text: `🔄 Обновить (${asset.baseAsset} 30м)`,
+          callback_data: `stat_show:${symbol}:${activeMode}`,
+        },
+        {
+          text: '🪙 Выбрать другую валюту',
+          callback_data: 'stat_menu:coins',
+        },
+      ],
+    ],
+  };
+}
+
 export async function sendTelegramAlert(
   config: TelegramConfig,
-  htmlText: string
+  htmlText: string,
+  replyMarkup?: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
   const token = config.botToken.trim();
   const chatId = config.chatId.trim();
@@ -192,6 +302,7 @@ export async function sendTelegramAlert(
         text: htmlText,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
+        reply_markup: replyMarkup || DEFAULT_TG_REPLY_KEYBOARD,
       }),
     });
 
@@ -211,3 +322,279 @@ export async function sendTelegramAlert(
     };
   }
 }
+
+export async function sendTelegramStatsInteractiveMenu(
+  config: TelegramConfig
+): Promise<{ ok: boolean; error?: string }> {
+  // 1. Сначала закрепляем нижнюю кнопку Reply Keyboard, чтобы она всегда была под рукой в боте
+  await sendTelegramAlert(
+    config,
+    '👇 Кнопка <b>«📊 Статистика сделок (30 мин)»</b> активирована в нижней панели вашего Telegram-бота.',
+    DEFAULT_TG_REPLY_KEYBOARD
+  );
+
+  // 2. Отправляем интерактивное меню выбора валюты и стратегии
+  const menuText = [
+    '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
+    '',
+    'Выберите криптовалюту ниже, чтобы посмотреть процент успешных сделок (Win Rate), PnL и историю сделок по каждой стратегии:',
+  ].join('\n');
+
+  return sendTelegramAlert(config, menuText, buildStatsCoinsInlineKeyboard());
+}
+
+async function editOrSendTelegramMessage(
+  botToken: string,
+  chatId: string | number,
+  messageId: number | undefined,
+  htmlText: string,
+  replyMarkup?: Record<string, unknown>
+): Promise<void> {
+  const token = botToken.trim();
+  if (!token) return;
+
+  if (messageId) {
+    try {
+      const editRes = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          text: htmlText,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: replyMarkup,
+        }),
+      });
+      const editData = await editRes.json();
+      if (editRes.ok && editData.ok) return;
+      if (
+        editData?.description &&
+        String(editData.description).includes('message is not modified')
+      ) {
+        return;
+      }
+    } catch {
+      // fallback to sendMessage
+    }
+  }
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: htmlText,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: replyMarkup || DEFAULT_TG_REPLY_KEYBOARD,
+      }),
+    });
+  } catch {
+    // ignore network error
+  }
+}
+
+export async function processTelegramBotUpdate(
+  update: any,
+  botToken: string,
+  exchange: ExchangeId,
+  strategyConfig: RsiBbStrategyConfig,
+  bjConfig: BjBotConfig
+): Promise<void> {
+  const token = botToken.trim();
+  if (!token) return;
+
+  // 1. Обработка нажатий на Inline-кнопки (выбор валюты и стратегии)
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const data = String(cq.data || '');
+    const chatId = cq.message?.chat?.id;
+    const messageId = cq.message?.message_id;
+
+    // Убираем индикатор загрузки на кнопке в Telegram
+    fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: cq.id }),
+    }).catch(() => {});
+
+    if (!chatId) return;
+
+    if (data === 'stat_menu:coins') {
+      const menuText = [
+        '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
+        '',
+        'Выберите криптовалюту ниже для расчета статистики по стратегиям:',
+      ].join('\n');
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        messageId,
+        menuText,
+        buildStatsCoinsInlineKeyboard()
+      );
+      return;
+    }
+
+    if (data.startsWith('stat_coin:')) {
+      const sym = data.replace('stat_coin:', '') as CryptoSymbol;
+      const asset = CRYPTO_ASSETS.find((a) => a.symbol === sym) || CRYPTO_ASSETS[0];
+      const text = [
+        `🪙 <b>Выбрана валюта: ${asset.baseAsset}/USDT (${asset.name})</b>`,
+        `⏱ <b>Интервал расчета:</b> 30 мин`,
+        '',
+        'Теперь выберите стратегию для просмотра статистики успешности сделок:',
+      ].join('\n');
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        messageId,
+        text,
+        buildStatsStrategyInlineKeyboard(asset.symbol)
+      );
+      return;
+    }
+
+    if (data.startsWith('stat_show:')) {
+      const parts = data.split(':');
+      const sym = (parts[1] || 'BTCUSDT') as CryptoSymbol;
+      const mode = (parts[2] || 'both') as 'rsi_bb' | 'bj_bot' | 'both';
+      const asset = CRYPTO_ASSETS.find((a) => a.symbol === sym) || CRYPTO_ASSETS[0];
+
+      const market30m = await fetchHistoricalCandles(exchange, '30m', 220, asset.symbol);
+      const candles = market30m.candles;
+
+      let reportHtml = '';
+      if (mode === 'rsi_bb') {
+        const rsiStats = evaluateStrategyStats(
+          candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'rsi_bb',
+          '30m'
+        );
+        reportHtml = formatTelegramStrategyStatsReport(rsiStats);
+      } else if (mode === 'bj_bot') {
+        const bjStats = evaluateStrategyStats(
+          candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'bj_bot',
+          '30m'
+        );
+        reportHtml = formatTelegramStrategyStatsReport(bjStats);
+      } else {
+        const rsiStats = evaluateStrategyStats(
+          candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'rsi_bb',
+          '30m'
+        );
+        const bjStats = evaluateStrategyStats(
+          candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'bj_bot',
+          '30m'
+        );
+        reportHtml = formatTelegramBothStrategiesReport(rsiStats, bjStats);
+      }
+
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        messageId,
+        reportHtml,
+        buildStatsResultInlineKeyboard(asset.symbol, mode)
+      );
+      return;
+    }
+
+    if (data === 'stat_all:summary') {
+      const rows = await Promise.all(
+        CRYPTO_ASSETS.map(async (asset) => {
+          const market30m = await fetchHistoricalCandles(
+            exchange,
+            '30m',
+            180,
+            asset.symbol
+          );
+          const rsi = evaluateStrategyStats(
+            market30m.candles,
+            strategyConfig,
+            bjConfig,
+            asset.symbol,
+            'rsi_bb',
+            '30m'
+          );
+          const bj = evaluateStrategyStats(
+            market30m.candles,
+            strategyConfig,
+            bjConfig,
+            asset.symbol,
+            'bj_bot',
+            '30m'
+          );
+          return { rsi, bj };
+        })
+      );
+
+      const summaryHtml = formatTelegramAllCoinsSummary(rows);
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        messageId,
+        summaryHtml,
+        buildStatsCoinsInlineKeyboard()
+      );
+      return;
+    }
+  }
+
+  // 2. Обработка текстовых команд и нажатия на нижнюю кнопку «📊 Статистика сделок (30 мин)»
+  if (update.message && update.message.chat?.id) {
+    const chatId = update.message.chat.id;
+    const text = String(update.message.text || '').trim();
+
+    if (
+      text === TG_STATS_BUTTON_TEXT ||
+      text.startsWith('/start') ||
+      text.startsWith('/stats') ||
+      text.toLowerCase().includes('статистик')
+    ) {
+      if (text.startsWith('/start')) {
+        await editOrSendTelegramMessage(
+          token,
+          chatId,
+          undefined,
+          '👋 <b>Добро пожаловать в QuantCrypto Терминал!</b>\nКнопка <b>«📊 Статистика сделок (30 мин)»</b> закреплена внизу экрана.',
+          DEFAULT_TG_REPLY_KEYBOARD
+        );
+      }
+
+      const menuText = [
+        '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
+        '',
+        'Выберите криптовалюту ниже, чтобы затем выбрать стратегию и посмотреть процент успешных сделок:',
+      ].join('\n');
+
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        undefined,
+        menuText,
+        buildStatsCoinsInlineKeyboard()
+      );
+    }
+  }
+}
+
+
