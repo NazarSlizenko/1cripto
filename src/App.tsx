@@ -25,10 +25,16 @@ import {
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
+  Trend4hInfo,
 } from './types/crypto';
 import { fetchHistoricalCandles, fetchLatestSpotPrice } from './services/exchangeService';
 import { computeIndicators } from './math/indicators';
 import { computeBjBotSeries } from './math/bjBot';
+import {
+  build4hTrendTimeline,
+  computeLatest4hTrendInfo,
+  Trend4hTimelinePoint,
+} from './math/trendFilter';
 import {
   evaluateStrategyStats,
   formatTelegramBothStrategiesReport,
@@ -37,7 +43,6 @@ import {
 import {
   buildStatsResultInlineKeyboard,
   detectRsiBbSignals,
-  evaluateCandleConfluence,
   formatSignalTelegramMessage,
   processTelegramBotUpdate,
   sendTelegramAlert,
@@ -47,9 +52,56 @@ import { InteractiveChart } from './components/InteractiveChart';
 import { RightControlPanel } from './components/RightControlPanel';
 
 const SYNC_INTERVAL_MS = 10000;
+const TREND_4H_INTERVAL_MS = 45 * 60 * 1000;
 const STORAGE_KEY_TG = 'quantbtc_telegram_config_v1';
-const STORAGE_KEY_STRATEGY = 'quantbtc_rsibb_strategy_v1';
+const STORAGE_KEY_STRATEGY = 'quantbtc_rsibb_strategy_v2';
 const STORAGE_KEY_BJBOT = 'quantbtc_bjbot_config_v1';
+
+const DEFAULT_STRATEGY_CONFIG: RsiBbStrategyConfig = {
+  enabled: true,
+  rsiPeriod: 14,
+  rsiOversold: 30,
+  rsiOverbought: 70,
+  bbPeriod: 20,
+  bbStdDev: 2.0,
+  requireStrictTouch: false,
+  requireReversalCandle: true,
+  use4hTrendFilter: false,
+  cooldownBars: 4,
+};
+
+const DEFAULT_BJ_CONFIG: BjBotConfig = {
+  enabled: true,
+  longTrades: true,
+  shortTrades: true,
+  useLimit: true,
+  trailStop: false,
+  flip: false,
+  rnr: 1.0,
+  riskM: 1.0,
+  swingLookback: 5,
+  atrLen: 14,
+  trailStopSize: 1.0,
+  trailSource: 'High/Low',
+  rrExit: 0.0,
+  maType1: 'EMA',
+  maLength1: 21,
+  maType2: 'EMA',
+  maLength2: 50,
+  drawEntry: false,
+  exitLvl: true,
+  use4hTrendFilter: true,
+  useFlatFilter: true,
+  minBbWidth: 1.5,
+};
+
+const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
+  botToken: '',
+  chatId: '',
+  autoNotify: true,
+  minConfluenceScore: 1,
+  notifyBreakeven: true,
+};
 
 export default function App() {
   const [symbol, setSymbol] = useState<CryptoSymbol>('BTCUSDT');
@@ -63,6 +115,11 @@ export default function App() {
 
   // Отдельный буфер 30-минутных свечей (30m) по всем криптовалютам для расчета статистики успешности сделок
   const [candles30mBySymbol, setCandles30mBySymbol] = useState<
+    Partial<Record<CryptoSymbol, Candle[]>>
+  >({});
+
+  // Кэш 4-часовых свечей (4h) для глобального фильтра тренда EMA 200 (обновляется раз в 45 мин)
+  const [candles4hBySymbol, setCandles4hBySymbol] = useState<
     Partial<Record<CryptoSymbol, Candle[]>>
   >({});
 
@@ -86,65 +143,33 @@ export default function App() {
   const [strategyConfig, setStrategyConfig] = useState<RsiBbStrategyConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STRATEGY);
-      if (saved) return JSON.parse(saved);
+      if (saved) return { ...DEFAULT_STRATEGY_CONFIG, ...JSON.parse(saved) };
     } catch {
       // ignore
     }
-    return {
-      enabled: true,
-      rsiPeriod: 14,
-      rsiOversold: 30,
-      rsiOverbought: 70,
-      bbPeriod: 20,
-      bbStdDev: 2.0,
-      requireStrictTouch: false,
-    };
+    return DEFAULT_STRATEGY_CONFIG;
   });
 
   // Конфигурация стратегии №2: Bj Bot (3Commas Bot)
   const [bjConfig, setBjConfig] = useState<BjBotConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BJBOT);
-      if (saved) return JSON.parse(saved);
+      if (saved) return { ...DEFAULT_BJ_CONFIG, ...JSON.parse(saved) };
     } catch {
       // ignore
     }
-    return {
-      enabled: true,
-      longTrades: true,
-      shortTrades: true,
-      useLimit: true,
-      trailStop: false,
-      flip: false,
-      rnr: 1.0,
-      riskM: 1.0,
-      swingLookback: 5,
-      atrLen: 14,
-      trailStopSize: 1.0,
-      trailSource: 'High/Low',
-      rrExit: 0.0,
-      maType1: 'EMA',
-      maLength1: 21,
-      maType2: 'EMA',
-      maLength2: 50,
-      drawEntry: false,
-      exitLvl: true,
-    };
+    return DEFAULT_BJ_CONFIG;
   });
 
   // Конфигурация Telegram-бота пользователя
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TG);
-      if (saved) return JSON.parse(saved);
+      if (saved) return { ...DEFAULT_TELEGRAM_CONFIG, ...JSON.parse(saved) };
     } catch {
       // ignore
     }
-    return {
-      botToken: '',
-      chatId: '',
-      autoNotify: true,
-    };
+    return DEFAULT_TELEGRAM_CONFIG;
   });
 
   const [isSendingTelegram, setIsSendingTelegram] = useState<boolean>(false);
@@ -217,7 +242,7 @@ export default function App() {
             data.telegramConfig?.chatId &&
             !localStorage.getItem(STORAGE_KEY_TG)
           ) {
-            setTelegramConfig(data.telegramConfig);
+            setTelegramConfig({ ...DEFAULT_TELEGRAM_CONFIG, ...data.telegramConfig });
           }
         }
 
@@ -374,6 +399,25 @@ export default function App() {
     strategyConfig.bbStdDev,
   ]);
 
+  // Построение шкалы старшего тренда 4h EMA 200 для всех 8 монет
+  const { trend4hTimelineBySymbol, trend4hLatestBySymbol } = useMemo(() => {
+    const timelineMap: Partial<Record<CryptoSymbol, Trend4hTimelinePoint[]>> = {};
+    const latestMap: Partial<Record<CryptoSymbol, Trend4hInfo>> = {};
+
+    for (const asset of CRYPTO_ASSETS) {
+      const c4h = candles4hBySymbol[asset.symbol];
+      if (c4h && c4h.length > 0) {
+        const timeline = build4hTrendTimeline(asset.symbol, c4h);
+        timelineMap[asset.symbol] = timeline;
+        latestMap[asset.symbol] =
+          timeline.length > 0
+            ? timeline[timeline.length - 1].info
+            : computeLatest4hTrendInfo(asset.symbol, c4h);
+      }
+    }
+    return { trend4hTimelineBySymbol: timelineMap, trend4hLatestBySymbol: latestMap };
+  }, [candles4hBySymbol]);
+
   // Вычисление Bj Bot (3Commas Bot) по всем загруженным криптовалютам
   const bjDataBySymbol = useMemo(() => {
     const result: Partial<
@@ -388,12 +432,23 @@ export default function App() {
           indList,
           bjConfig,
           timeframe,
-          asset.symbol
+          asset.symbol,
+          {
+            trend4hTimeline: trend4hTimelineBySymbol[asset.symbol],
+            latestTrend4h: trend4hLatestBySymbol[asset.symbol],
+          }
         );
       }
     }
     return result;
-  }, [candlesBySymbol, indicatorsBySymbol, bjConfig, timeframe]);
+  }, [
+    candlesBySymbol,
+    indicatorsBySymbol,
+    bjConfig,
+    timeframe,
+    trend4hTimelineBySymbol,
+    trend4hLatestBySymbol,
+  ]);
 
   const activeIndicators = indicatorsBySymbol[symbol] || [];
   const activeBjBars = bjDataBySymbol[symbol]?.bars || [];
@@ -409,6 +464,7 @@ export default function App() {
       const c30 =
         candles30mBySymbol[asset.symbol] ||
         (timeframe === '30m' ? candlesBySymbol[asset.symbol] : undefined);
+      const t4h = trend4hTimelineBySymbol[asset.symbol];
 
       if (c30 && c30.length > 0) {
         const liveRsi = evaluateStrategyStats(
@@ -417,7 +473,8 @@ export default function App() {
           bjConfig,
           asset.symbol,
           'rsi_bb',
-          '30m'
+          '30m',
+          t4h
         );
         const liveBj = evaluateStrategyStats(
           c30,
@@ -425,7 +482,8 @@ export default function App() {
           bjConfig,
           asset.symbol,
           'bj_bot',
-          '30m'
+          '30m',
+          t4h
         );
 
         result[asset.symbol] = {
@@ -450,6 +508,7 @@ export default function App() {
     timeframe,
     strategyConfig,
     bjConfig,
+    trend4hTimelineBySymbol,
   ]);
 
   // Все сигналы по выбранной на графике монете (чтобы на графике отображались все метки BUY/SELL и LONG/SHORT/L EXIT/S EXIT)
@@ -463,14 +522,29 @@ export default function App() {
         indList,
         strategyConfig,
         timeframe,
-        symbol
+        symbol,
+        {
+          trend4hTimeline: trend4hTimelineBySymbol[symbol],
+          latestTrend4h: trend4hLatestBySymbol[symbol],
+          minBbWidth: bjConfig.minBbWidth ?? 1.5,
+        }
       );
       list.push(...rsiBbSignals);
       const bjSignals = bjDataBySymbol[symbol]?.signals || [];
       list.push(...bjSignals);
     }
     return list;
-  }, [candlesBySymbol, indicatorsBySymbol, bjDataBySymbol, strategyConfig, timeframe, symbol]);
+  }, [
+    candlesBySymbol,
+    indicatorsBySymbol,
+    bjDataBySymbol,
+    strategyConfig,
+    bjConfig.minBbWidth,
+    timeframe,
+    symbol,
+    trend4hTimelineBySymbol,
+    trend4hLatestBySymbol,
+  ]);
 
   // Поиск сигналов одновременно по ВСЕМ криптовалютам (максимум 50 последних сигналов)
   const allSignals: StrategySignalEvent[] = useMemo(() => {
@@ -484,7 +558,12 @@ export default function App() {
           indList,
           strategyConfig,
           timeframe,
-          asset.symbol
+          asset.symbol,
+          {
+            trend4hTimeline: trend4hTimelineBySymbol[asset.symbol],
+            latestTrend4h: trend4hLatestBySymbol[asset.symbol],
+            minBbWidth: bjConfig.minBbWidth ?? 1.5,
+          }
         );
         for (const sig of rsiBbSignals) {
           combined.push({
@@ -509,8 +588,11 @@ export default function App() {
     indicatorsBySymbol,
     bjDataBySymbol,
     strategyConfig,
+    bjConfig.minBbWidth,
     timeframe,
     sentSignalIds,
+    trend4hTimelineBySymbol,
+    trend4hLatestBySymbol,
   ]);
 
   const latestCandle =
@@ -622,6 +704,33 @@ export default function App() {
     return () => clearInterval(timer);
   }, [syncAllMarkets]);
 
+  // Фоновая загрузка 4h свечей раз в 45 минут для фильтра глобального тренда EMA 200
+  const sync4hTrendCandles = useCallback(async () => {
+    try {
+      const results4h = await Promise.all(
+        CRYPTO_ASSETS.map(async (asset) => {
+          const data4h = await fetchHistoricalCandles(exchange, '4h', 250, asset.symbol);
+          return { sym: asset.symbol, candles: data4h.candles };
+        })
+      );
+      setCandles4hBySymbol(() => {
+        const next: Partial<Record<CryptoSymbol, Candle[]>> = {};
+        for (const item of results4h) {
+          next[item.sym] = item.candles;
+        }
+        return next;
+      });
+    } catch {
+      // ignore transient error
+    }
+  }, [exchange]);
+
+  useEffect(() => {
+    sync4hTrendCandles();
+    const timer = setInterval(sync4hTrendCandles, TREND_4H_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [sync4hTrendCandles]);
+
   // Автоматическая отправка уведомлений в Telegram при появлении сигнала на ЛЮБОЙ криптовалюте
   useEffect(() => {
     if (
@@ -632,6 +741,9 @@ export default function App() {
       return;
     }
 
+    const minScore = telegramConfig.minConfluenceScore ?? 1;
+    const notifyBe = telegramConfig.notifyBreakeven ?? true;
+
     for (const asset of CRYPTO_ASSETS) {
       const cList = candlesBySymbol[asset.symbol];
       const indList = indicatorsBySymbol[asset.symbol];
@@ -641,104 +753,161 @@ export default function App() {
       const lastC = cList[cList.length - 1];
       const lastI = indList[indList.length - 1];
 
-      // 1. Проверка сигнала RSI + BB на текущей свече
+      // 1. Проверка сигнала RSI + BB (с подтверждением разворота, без спама)
       if (strategyConfig.enabled) {
-        const confluence = evaluateCandleConfluence(lastC, lastI, strategyConfig);
-        if (confluence.activeSignal !== 'NONE') {
-          const signalId = `${asset.symbol}-${timeframe}-${lastC.timestamp}-${confluence.activeSignal}`;
-          if (!sentSignalIdsRef.current.has(signalId)) {
-            sentSignalIdsRef.current.add(signalId);
-            const signalEvent: StrategySignalEvent = {
-              id: signalId,
-              strategyName: 'RSI+BB',
-              symbol: asset.symbol,
-              baseAsset: asset.baseAsset,
-              timestamp: Date.now(),
-              candleTimestamp: lastC.timestamp,
-              type: confluence.activeSignal,
-              price: lastC.close,
-              rsiValue: lastI.rsi,
-              bbUpper: lastI.bbUpper,
-              bbLower: lastI.bbLower,
-              percentB: lastI.bbPercentB,
-              timeframe,
-              telegramSent: true,
-            };
-
-            const msg = formatSignalTelegramMessage(
-              signalEvent,
-              exchange,
-              strategyConfig,
-              bjConfig
-            );
-            sendTelegramAlert(telegramConfig, msg).then((res) => {
-              if (res.ok) {
-                setSentSignalIds((prev) => [...prev, signalId]);
-                const token = idTokenRef.current;
-                if (token) {
-                  fetch('/api/bot/mark-sent', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                      signalId,
-                      symbol: asset.symbol,
-                      strategyName: 'RSI+BB',
-                      signalType: confluence.activeSignal,
-                      price: lastC.close,
-                      candleTimestamp: lastC.timestamp,
-                    }),
-                  }).catch(() => {});
-                }
-                setTelegramFeedback({
-                  type: 'success',
-                  message: `Алерт ${asset.baseAsset}/USDT (RSI+BB) отправлен в Telegram`,
-                });
-              } else {
-                sentSignalIdsRef.current.delete(signalId);
-              }
-            });
+        const rsiSignals = detectRsiBbSignals(
+          cList,
+          indList,
+          strategyConfig,
+          timeframe,
+          asset.symbol,
+          {
+            trend4hTimeline: trend4hTimelineBySymbol[asset.symbol],
+            latestTrend4h: trend4hLatestBySymbol[asset.symbol],
+            minBbWidth: bjConfig.minBbWidth ?? 1.5,
           }
+        );
+        const latestRsiSig = rsiSignals.find((s) => s.candleTimestamp === lastC.timestamp);
+        if (
+          latestRsiSig &&
+          (latestRsiSig.confluenceScore ?? 1) >= minScore &&
+          !sentSignalIdsRef.current.has(latestRsiSig.id)
+        ) {
+          sentSignalIdsRef.current.add(latestRsiSig.id);
+          const signalEvent: StrategySignalEvent = {
+            ...latestRsiSig,
+            telegramSent: true,
+          };
+
+          const msg = formatSignalTelegramMessage(
+            signalEvent,
+            exchange,
+            strategyConfig,
+            bjConfig
+          );
+          sendTelegramAlert(telegramConfig, msg).then((res) => {
+            if (res.ok) {
+              setSentSignalIds((prev) => [...prev, latestRsiSig.id]);
+              const token = idTokenRef.current;
+              if (token) {
+                fetch('/api/bot/mark-sent', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    signalId: latestRsiSig.id,
+                    symbol: asset.symbol,
+                    strategyName: 'RSI+BB',
+                    signalType: latestRsiSig.type,
+                    price: latestRsiSig.price,
+                    candleTimestamp: lastC.timestamp,
+                  }),
+                }).catch(() => {});
+              }
+              setTelegramFeedback({
+                type: 'success',
+                message: `Алерт ${asset.baseAsset}/USDT (RSI+BB · ${latestRsiSig.confluenceScore ?? 1}/3) отправлен в Telegram`,
+              });
+            } else {
+              sentSignalIdsRef.current.delete(latestRsiSig.id);
+            }
+          });
         }
       }
 
-      // 2. Проверка сигнала Bj Bot на текущей свече
+      // 2. Проверка сигнала Bj Bot + уведомления о безубытке (+50% до TP)
       if (bjConfig.enabled && bjData && bjData.bars.length > 0) {
         const lastBjBar = bjData.bars[bjData.bars.length - 1];
-        if (lastBjBar.signal !== null) {
-          const signalId = `${asset.symbol}-${timeframe}-${lastC.timestamp}-${lastBjBar.signal}`;
-          if (!sentSignalIdsRef.current.has(signalId)) {
-            sentSignalIdsRef.current.add(signalId);
-            const signalEvent: StrategySignalEvent = {
-              id: signalId,
+        const latestBjSig = bjData.signals.find((s) => s.candleTimestamp === lastC.timestamp);
+
+        if (
+          latestBjSig &&
+          (latestBjSig.confluenceScore ?? 1) >= minScore &&
+          !sentSignalIdsRef.current.has(latestBjSig.id)
+        ) {
+          sentSignalIdsRef.current.add(latestBjSig.id);
+          const signalEvent: StrategySignalEvent = {
+            ...latestBjSig,
+            telegramSent: true,
+          };
+
+          const msg = formatSignalTelegramMessage(
+            signalEvent,
+            exchange,
+            strategyConfig,
+            bjConfig
+          );
+          sendTelegramAlert(telegramConfig, msg).then((res) => {
+            if (res.ok) {
+              setSentSignalIds((prev) => [...prev, latestBjSig.id]);
+              const token = idTokenRef.current;
+              if (token) {
+                fetch('/api/bot/mark-sent', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    signalId: latestBjSig.id,
+                    symbol: asset.symbol,
+                    strategyName: 'Bj Bot',
+                    signalType: latestBjSig.type,
+                    price: latestBjSig.price,
+                    candleTimestamp: lastC.timestamp,
+                  }),
+                }).catch(() => {});
+              }
+              setTelegramFeedback({
+                type: 'success',
+                message: `Алерт ${asset.baseAsset}/USDT (Bj Bot · ${latestBjSig.confluenceScore ?? 1}/3) отправлен в Telegram`,
+              });
+            } else {
+              sentSignalIdsRef.current.delete(latestBjSig.id);
+            }
+          });
+        }
+
+        if (
+          notifyBe &&
+          lastBjBar.breakevenTriggered &&
+          lastBjBar.activeEntryTimestamp &&
+          lastBjBar.activeEntryPrice
+        ) {
+          const beId = `${asset.symbol}-${timeframe}-${lastBjBar.activeEntryTimestamp}-BREAKEVEN`;
+          if (!sentSignalIdsRef.current.has(beId)) {
+            sentSignalIdsRef.current.add(beId);
+            const beEvent: StrategySignalEvent = {
+              id: beId,
               strategyName: 'Bj Bot',
               symbol: asset.symbol,
               baseAsset: asset.baseAsset,
               timestamp: Date.now(),
               candleTimestamp: lastC.timestamp,
-              type: lastBjBar.signal,
+              type: 'BREAKEVEN',
               price: lastC.close,
+              entryPrice: lastBjBar.activeEntryPrice,
+              targetPrice: lastBjBar.targetPrice ?? undefined,
               rsiValue: lastI.rsi,
               bbUpper: lastI.bbUpper,
               bbLower: lastI.bbLower,
               percentB: lastI.bbPercentB,
-              stopPrice: lastBjBar.stopPrice ?? undefined,
-              targetPrice: lastBjBar.targetPrice ?? undefined,
+              confluenceScore: 3,
               timeframe,
               telegramSent: true,
             };
 
-            const msg = formatSignalTelegramMessage(
-              signalEvent,
+            const beMsg = formatSignalTelegramMessage(
+              beEvent,
               exchange,
               strategyConfig,
               bjConfig
             );
-            sendTelegramAlert(telegramConfig, msg).then((res) => {
+            sendTelegramAlert(telegramConfig, beMsg).then((res) => {
               if (res.ok) {
-                setSentSignalIds((prev) => [...prev, signalId]);
+                setSentSignalIds((prev) => [...prev, beId]);
                 const token = idTokenRef.current;
                 if (token) {
                   fetch('/api/bot/mark-sent', {
@@ -748,21 +917,17 @@ export default function App() {
                       Authorization: `Bearer ${token}`,
                     },
                     body: JSON.stringify({
-                      signalId,
+                      signalId: beId,
                       symbol: asset.symbol,
                       strategyName: 'Bj Bot',
-                      signalType: lastBjBar.signal,
+                      signalType: 'BREAKEVEN',
                       price: lastC.close,
                       candleTimestamp: lastC.timestamp,
                     }),
                   }).catch(() => {});
                 }
-                setTelegramFeedback({
-                  type: 'success',
-                  message: `Алерт ${asset.baseAsset}/USDT (Bj Bot) отправлен в Telegram`,
-                });
               } else {
-                sentSignalIdsRef.current.delete(signalId);
+                sentSignalIdsRef.current.delete(beId);
               }
             });
           }
@@ -778,6 +943,8 @@ export default function App() {
     telegramConfig,
     timeframe,
     exchange,
+    trend4hTimelineBySymbol,
+    trend4hLatestBySymbol,
   ]);
 
   // Тестовая отправка сообщения в Telegram
@@ -914,9 +1081,9 @@ export default function App() {
       />
 
       {/* Модульная двухколоночная сетка */}
-      <main className="relative z-10 flex-1 max-w-[1680px] w-full mx-auto px-4 sm:px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+      <main className="relative z-10 flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-6 py-3 sm:py-5 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
         {/* ЛЕВАЯ КОЛОНКА: Интерактивный график */}
-        <div className="lg:col-span-8 flex flex-col">
+        <div className="lg:col-span-8 lg:sticky lg:top-5 min-w-0">
           <InteractiveChart
             symbol={symbol}
             onSymbolChange={setSymbol}
@@ -936,7 +1103,7 @@ export default function App() {
         </div>
 
         {/* ПРАВАЯ КОЛОНКА: Чистые белые панели */}
-        <div className="lg:col-span-4 flex flex-col">
+        <div className="lg:col-span-4 flex flex-col min-w-0">
           <RightControlPanel
             symbol={symbol}
             onSelectSymbol={setSymbol}
@@ -962,6 +1129,7 @@ export default function App() {
             telegramFeedback={telegramFeedback}
             allSignals={allSignals}
             stats30mBySymbol={stats30mBySymbol}
+            trend4hBySymbol={trend4hLatestBySymbol}
             timeframe={timeframe}
             userEmail={authUser?.email || null}
             isAuthLoading={isAuthLoading}

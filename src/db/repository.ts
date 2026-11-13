@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import { db, isDatabaseConfigured } from './index.ts';
 import { botConfigs, sentSignals, trades } from './schema.ts';
 import {
@@ -357,5 +357,51 @@ export async function markSignalSentInDb(
     throw new Error('Database query failed. Please try again later.', {
       cause: error,
     });
+  }
+}
+
+/**
+ * Удаляет из sent_signals устаревшие технические ключи старше daysToKeep (по умолчанию 14 дней),
+ * сохраняя таблицу trades вечной и легкой для бесплатного тарифа Neon (500 MB).
+ */
+export async function cleanupOldSentSignals(daysToKeep: number = 14): Promise<number> {
+  if (!isDatabaseConfigured()) return 0;
+  try {
+    const cutoff = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000);
+    const deleted = await db
+      .delete(sentSignals)
+      .where(lt(sentSignals.createdAt, cutoff))
+      .returning({ id: sentSignals.id });
+    return deleted.length;
+  } catch (error) {
+    console.error('Database query failed (cleanupOldSentSignals):', error);
+    return 0;
+  }
+}
+
+/**
+ * Обновляет telegramConfig в самой свежей записи bot_configs при изменении фильтра прямо из Telegram-бота.
+ */
+export async function updateLatestTelegramConfigInDb(
+  telegramConfig: TelegramConfig
+): Promise<void> {
+  if (!isDatabaseConfigured()) return;
+  try {
+    const rows = await db
+      .select({ id: botConfigs.id })
+      .from(botConfigs)
+      .orderBy(desc(botConfigs.updatedAt))
+      .limit(1);
+
+    if (rows.length === 0) return;
+    await db
+      .update(botConfigs)
+      .set({
+        telegramConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(botConfigs.id, rows[0].id));
+  } catch (error) {
+    console.error('Database query failed (updateLatestTelegramConfigInDb):', error);
   }
 }

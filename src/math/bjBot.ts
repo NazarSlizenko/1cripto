@@ -16,6 +16,14 @@ import {
   TimeframeId,
 } from '../types/crypto';
 import { calculateATR, calculateEMA, calculateSMA } from './indicators';
+import {
+  computeConfluenceScore,
+  computeVolumeRatio,
+  get4hTrendAtTimestamp,
+  isSignalAllowedBy4hTrend,
+  Trend4hTimelinePoint,
+} from './trendFilter';
+import type { Trend4hInfo } from '../types/crypto';
 
 function calculateWMA(values: number[], period: number): number[] {
   const result: number[] = new Array(values.length).fill(NaN);
@@ -153,14 +161,19 @@ export function calculateBjMA(
 
 /**
  * Evaluates full Bj Bot (3Commas Bot) Pine Script v5 strategy on a candle series,
- * generating LONG, SHORT, L EXIT, and S EXIT events.
+ * generating LONG, SHORT, L EXIT, S EXIT, and +50% breakeven notifications
+ * with 4h EMA 200 trend filter and BB flat-squeeze protection.
  */
 export function computeBjBotSeries(
   candles: Candle[],
   indicators: Indicators[],
   config: BjBotConfig,
   timeframe: TimeframeId,
-  symbol: CryptoSymbol = 'BTCUSDT'
+  symbol: CryptoSymbol = 'BTCUSDT',
+  options?: {
+    trend4hTimeline?: Trend4hTimelinePoint[];
+    latestTrend4h?: Trend4hInfo | null;
+  }
 ): {
   bars: BjBotBarPoint[];
   signals: StrategySignalEvent[];
@@ -179,16 +192,22 @@ export function computeBjBotSeries(
 
   let position: 0 | 1 | -1 = 0; // 0 = FLAT, 1 = LONG, -1 = SHORT
   let entryPrice = 0.0;
+  let entryTimestamp = 0;
   let lookForExit = false;
   let tradeStopPrice = 0.0;
   let tradeTargetPrice = 0.0;
   let trailingStop = 0.0;
   let tradeExitTriggerPrice = 0.0;
+  let breakevenSentForPosition = false;
 
   const warmup = Math.max(config.maLength1, config.maLength2, config.atrLen, config.swingLookback);
+  const minBbWidth = config.minBbWidth ?? 1.5;
+  const useFlatFilter = config.useFlatFilter ?? true;
+  const use4hTrendFilter = config.use4hTrendFilter ?? true;
 
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
+    const ind = indicators[i];
     const ma1 = ma1Series[i];
     const ma2 = ma2Series[i];
     const prevMa1 = i > 0 ? ma1Series[i - 1] : ma1;
@@ -205,6 +224,8 @@ export function computeBjBotSeries(
 
     let barSignal: BjBotSignalType | null = null;
     let exitPriceForSignal: number | null = null;
+    let barBreakevenTriggered = false;
+    const closedEntryPrice = entryPrice;
 
     // 1. Check if existing position hit Stop or Target ("L Exit" or "S Exit")
     if (position === 1) {
@@ -212,11 +233,13 @@ export function computeBjBotSeries(
       if (c.low <= activeStop) {
         position = 0;
         lookForExit = false;
+        breakevenSentForPosition = false;
         barSignal = 'L EXIT';
         exitPriceForSignal = activeStop;
       } else if (config.useLimit && !isNaN(tradeTargetPrice) && c.high >= tradeTargetPrice) {
         position = 0;
         lookForExit = false;
+        breakevenSentForPosition = false;
         barSignal = 'L EXIT';
         exitPriceForSignal = tradeTargetPrice;
       }
@@ -225,13 +248,30 @@ export function computeBjBotSeries(
       if (c.high >= activeStop) {
         position = 0;
         lookForExit = false;
+        breakevenSentForPosition = false;
         barSignal = 'S EXIT';
         exitPriceForSignal = activeStop;
       } else if (config.useLimit && !isNaN(tradeTargetPrice) && c.low <= tradeTargetPrice) {
         position = 0;
         lookForExit = false;
+        breakevenSentForPosition = false;
         barSignal = 'S EXIT';
         exitPriceForSignal = tradeTargetPrice;
+      }
+    }
+
+    // 1b. Breakeven check (+50% halfway to TP while position remains open)
+    if (position === 1 && !breakevenSentForPosition && config.useLimit && !isNaN(tradeTargetPrice) && tradeTargetPrice > entryPrice) {
+      const halfwayPrice = entryPrice + (tradeTargetPrice - entryPrice) * 0.5;
+      if (c.high >= halfwayPrice || c.close >= halfwayPrice) {
+        breakevenSentForPosition = true;
+        barBreakevenTriggered = true;
+      }
+    } else if (position === -1 && !breakevenSentForPosition && config.useLimit && !isNaN(tradeTargetPrice) && tradeTargetPrice < entryPrice) {
+      const halfwayPrice = entryPrice - (entryPrice - tradeTargetPrice) * 0.5;
+      if (c.low <= halfwayPrice || c.close <= halfwayPrice) {
+        breakevenSentForPosition = true;
+        barBreakevenTriggered = true;
       }
     }
 
@@ -268,35 +308,56 @@ export function computeBjBotSeries(
     const longLimitDist = c.close - longLimit;
     const shortLimitDist = shortLimit - c.close;
 
-    // 4. Crossovers ("Long" and "Short")
+    // 4. Flat squeeze & 4h trend checks before entering a new position
+    const bbWidth = ind ? ind.bbWidth : 3.5;
+    const isFlatSqueeze = useFlatFilter && bbWidth < minBbWidth;
+    const trend4hInfo = get4hTrendAtTimestamp(
+      options?.trend4hTimeline,
+      c.timestamp,
+      options?.latestTrend4h
+    );
+    const allowLongByTrend = !use4hTrendFilter || isSignalAllowedBy4hTrend('LONG', trend4hInfo);
+    const allowShortByTrend = !use4hTrendFilter || isSignalAllowedBy4hTrend('SHORT', trend4hInfo);
+
+    // 5. Crossovers ("Long" and "Short")
     const ma1CrossUp2 = i >= warmup && prevMa1 <= prevMa2 && ma1 > ma2;
     const ma1CrossDn2 = i >= warmup && prevMa1 >= prevMa2 && ma1 < ma2;
 
     if (
       ma1CrossDn2 &&
+      !isFlatSqueeze &&
+      allowShortByTrend &&
       (position === 0 || (position === 1 && config.flip)) &&
       config.shortTrades
     ) {
       position = -1;
       entryPrice = c.close;
+      entryTimestamp = c.timestamp;
       tradeStopPrice = shortStop;
       tradeTargetPrice = config.useLimit ? shortLimit : NaN;
       tradeExitTriggerPrice = c.close + shortLimitDist * config.rrExit;
       lookForExit = false;
+      breakevenSentForPosition = false;
+      barBreakevenTriggered = false;
       trailingStop = tradeStopPrice;
       barSignal = 'SHORT';
       exitPriceForSignal = null;
     } else if (
       ma1CrossUp2 &&
+      !isFlatSqueeze &&
+      allowLongByTrend &&
       (position === 0 || (position === -1 && config.flip)) &&
       config.longTrades
     ) {
       position = 1;
       entryPrice = c.close;
+      entryTimestamp = c.timestamp;
       tradeStopPrice = longStop;
       tradeTargetPrice = config.useLimit ? longLimit : NaN;
       tradeExitTriggerPrice = c.close - longLimitDist * config.rrExit;
       lookForExit = false;
+      breakevenSentForPosition = false;
+      barBreakevenTriggered = false;
       trailingStop = tradeStopPrice;
       barSignal = 'LONG';
       exitPriceForSignal = null;
@@ -339,10 +400,24 @@ export function computeBjBotSeries(
       targetPrice: activeTargetPrice,
       triggerExitPrice: activeTriggerExit,
       signal: barSignal,
+      activePosition: position,
+      activeEntryPrice: position !== 0 ? entryPrice : null,
+      activeEntryTimestamp: position !== 0 ? entryTimestamp : null,
+      breakevenTriggered: barBreakevenTriggered,
     });
 
     if (config.enabled && barSignal !== null) {
-      const ind = indicators[i];
+      const volumeRatio = computeVolumeRatio(candles, i, 20);
+      const directionForScore: 'LONG' | 'SHORT' =
+        barSignal === 'SHORT' || barSignal === 'S EXIT' ? 'SHORT' : 'LONG';
+      const confluence = computeConfluenceScore({
+        direction: directionForScore,
+        trend4h: trend4hInfo,
+        volumeRatio,
+        bbWidth,
+        minBbWidth,
+      });
+
       signals.push({
         id: `${symbol}-${timeframe}-${c.timestamp}-${barSignal}`,
         strategyName: 'Bj Bot',
@@ -358,6 +433,12 @@ export function computeBjBotSeries(
         percentB: ind ? ind.bbPercentB : 0.5,
         stopPrice: activeStopPrice ?? undefined,
         targetPrice: activeTargetPrice ?? undefined,
+        entryPrice: position !== 0 ? entryPrice : closedEntryPrice || undefined,
+        confluenceScore: confluence.score,
+        confluenceReasons: confluence.reasons,
+        trend4h: confluence.trend4hDirection,
+        volumeRatio,
+        bbWidth,
         timeframe,
         telegramSent: false,
       });

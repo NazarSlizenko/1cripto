@@ -18,6 +18,11 @@ import {
 } from '../types/crypto';
 import { calculateATR, computeIndicators } from './indicators';
 import { calculateBjMA } from './bjBot';
+import {
+  get4hTrendAtTimestamp,
+  isSignalAllowedBy4hTrend,
+  Trend4hTimelinePoint,
+} from './trendFilter';
 
 function buildPairStatsSummary(
   symbol: CryptoSymbol,
@@ -82,12 +87,16 @@ export function evaluateRsiBbStats30m(
   indicators: Indicators[],
   config: RsiBbStrategyConfig,
   symbol: CryptoSymbol,
-  timeframe: TimeframeId = '30m'
+  timeframe: TimeframeId = '30m',
+  trend4hTimeline?: Trend4hTimelinePoint[]
 ): StrategyPairStats {
   const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
   if (candles.length < 30 || indicators.length !== candles.length) {
     return buildPairStatsSummary(symbol, 'rsi_bb', timeframe, []);
   }
+
+  const requireReversal = config.requireReversalCandle ?? true;
+  const use4hTrend = config.use4hTrendFilter ?? false;
 
   const runSimulation = (
     oversoldLvl: number,
@@ -98,27 +107,68 @@ export function evaluateRsiBbStats30m(
     const trades: CompletedTradeRecord[] = [];
     const warmup = Math.max(config.rsiPeriod, config.bbPeriod);
     let i = warmup;
+    let buyArmedBar: number | null = null;
+    let sellArmedBar: number | null = null;
 
     while (i < candles.length - 1) {
       const c = candles[i];
       const ind = indicators[i];
+      const prevInd = i > 0 ? indicators[i - 1] : ind;
 
-      const isRsiOversold = ind.rsi <= oversoldLvl;
-      const isRsiOverbought = ind.rsi >= overboughtLvl;
-
-      const isBbOversold = config.requireStrictTouch
+      const isBbLow = config.requireStrictTouch
         ? c.low <= ind.bbLower || c.close <= ind.bbLower
         : ind.bbPercentB <= bbThresholdLow;
-
-      const isBbOverbought = config.requireStrictTouch
+      const isBbHigh = config.requireStrictTouch
         ? c.high >= ind.bbUpper || c.close >= ind.bbUpper
         : ind.bbPercentB >= bbThresholdHigh;
 
+      if (ind.rsi <= oversoldLvl && isBbLow) {
+        buyArmedBar = i;
+        sellArmedBar = null;
+      } else if (ind.rsi >= overboughtLvl && isBbHigh) {
+        sellArmedBar = i;
+        buyArmedBar = null;
+      }
+
+      if (buyArmedBar !== null && (i - buyArmedBar > 5 || ind.rsi > 55)) {
+        buyArmedBar = null;
+      }
+      if (sellArmedBar !== null && (i - sellArmedBar > 5 || ind.rsi < 45)) {
+        sellArmedBar = null;
+      }
+
+      const candleRange = Math.max(1e-9, c.high - c.low);
+      const closeStrengthFromLow = (c.close - c.low) / candleRange;
+      const closeStrengthFromHigh = (c.high - c.close) / candleRange;
+
+      const buyReversalOk =
+        !requireReversal ||
+        c.close > c.open ||
+        ind.rsi > prevInd.rsi + 0.25 ||
+        closeStrengthFromLow >= 0.55;
+      const sellReversalOk =
+        !requireReversal ||
+        c.close < c.open ||
+        ind.rsi < prevInd.rsi - 0.25 ||
+        closeStrengthFromHigh >= 0.55;
+
+      const trendAtBar = get4hTrendAtTimestamp(trend4hTimeline, c.timestamp);
+
       let direction: 'LONG' | 'SHORT' | null = null;
-      if (isRsiOversold && isBbOversold) {
+      if (
+        buyArmedBar !== null &&
+        buyReversalOk &&
+        (!use4hTrend || isSignalAllowedBy4hTrend('LONG', trendAtBar))
+      ) {
         direction = 'LONG';
-      } else if (isRsiOverbought && isBbOverbought) {
+        buyArmedBar = null;
+      } else if (
+        sellArmedBar !== null &&
+        sellReversalOk &&
+        (!use4hTrend || isSignalAllowedBy4hTrend('SHORT', trendAtBar))
+      ) {
         direction = 'SHORT';
+        sellArmedBar = null;
       }
 
       if (!direction) {
@@ -208,13 +258,12 @@ export function evaluateRsiBbStats30m(
         exitReason,
       });
 
-      i = Math.max(i + 1, exitIdx);
+      i = Math.max(i + 2, exitIdx + 1);
     }
 
     return trades;
   };
 
-  // Сначала проверяем строгие пороги пользователя, при малом числе экстремумов на участке дополняем адаптивным порогом
   let trades = runSimulation(
     config.rsiOversold,
     config.rsiOverbought,
@@ -238,10 +287,11 @@ export function evaluateRsiBbStats30m(
  */
 export function evaluateBjBotStats30m(
   candles: Candle[],
-  _indicators: Indicators[],
+  indicators: Indicators[],
   config: BjBotConfig,
   symbol: CryptoSymbol,
-  timeframe: TimeframeId = '30m'
+  timeframe: TimeframeId = '30m',
+  trend4hTimeline?: Trend4hTimelinePoint[]
 ): StrategyPairStats {
   const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
   if (candles.length < 30) {
@@ -260,6 +310,10 @@ export function evaluateBjBotStats30m(
     config.swingLookback
   );
 
+  const useFlatFilter = config.useFlatFilter ?? true;
+  const minBbWidth = config.minBbWidth ?? 1.5;
+  const use4hTrendFilter = config.use4hTrendFilter ?? true;
+
   let position: 0 | 1 | -1 = 0;
   let entryPrice = 0;
   let entryTimestamp = 0;
@@ -268,6 +322,7 @@ export function evaluateBjBotStats30m(
 
   for (let i = warmup; i < candles.length; i++) {
     const c = candles[i];
+    const ind = indicators[i];
     const ma1 = ma1Series[i];
     const ma2 = ma2Series[i];
     const prevMa1 = i > 0 ? ma1Series[i - 1] : ma1;
@@ -369,9 +424,15 @@ export function evaluateBjBotStats30m(
       }
     }
 
-    // 2. Пересечения MA1 × MA2
+    // 2. Пересечения MA1 × MA2 с анти-флэт фильтром (bbWidth) и 4h трендом
     const ma1CrossUp2 = prevMa1 <= prevMa2 && ma1 > ma2;
     const ma1CrossDn2 = prevMa1 >= prevMa2 && ma1 < ma2;
+
+    const bbWidth = ind ? ind.bbWidth : 3.5;
+    const isFlatSqueeze = useFlatFilter && bbWidth < minBbWidth;
+    const trendAtBar = get4hTrendAtTimestamp(trend4hTimeline, c.timestamp);
+    const allowLong = !use4hTrendFilter || isSignalAllowedBy4hTrend('LONG', trendAtBar);
+    const allowShort = !use4hTrendFilter || isSignalAllowedBy4hTrend('SHORT', trendAtBar);
 
     const longStop = lowestLow - atr * config.riskM;
     const shortStop = highestHigh + atr * config.riskM;
@@ -402,7 +463,7 @@ export function evaluateBjBotStats30m(
         });
         position = 0;
       }
-      if (position === 0) {
+      if (position === 0 && !isFlatSqueeze && allowShort) {
         position = -1;
         entryPrice = c.close;
         entryTimestamp = c.timestamp;
@@ -431,7 +492,7 @@ export function evaluateBjBotStats30m(
         });
         position = 0;
       }
-      if (position === 0) {
+      if (position === 0 && !isFlatSqueeze && allowLong) {
         position = 1;
         entryPrice = c.close;
         entryTimestamp = c.timestamp;
@@ -453,7 +514,8 @@ export function evaluateStrategyStats(
   bjConfig: BjBotConfig,
   symbol: CryptoSymbol,
   strategyId: StrategyId,
-  timeframe: TimeframeId = '30m'
+  timeframe: TimeframeId = '30m',
+  trend4hTimeline?: Trend4hTimelinePoint[]
 ): StrategyPairStats {
   const indList = computeIndicators(candles, {
     rsiPeriod: strategyConfig.rsiPeriod,
@@ -462,9 +524,23 @@ export function evaluateStrategyStats(
   }).indicators;
 
   if (strategyId === 'rsi_bb') {
-    return evaluateRsiBbStats30m(candles, indList, strategyConfig, symbol, timeframe);
+    return evaluateRsiBbStats30m(
+      candles,
+      indList,
+      strategyConfig,
+      symbol,
+      timeframe,
+      trend4hTimeline
+    );
   }
-  return evaluateBjBotStats30m(candles, indList, bjConfig, symbol, timeframe);
+  return evaluateBjBotStats30m(
+    candles,
+    indList,
+    bjConfig,
+    symbol,
+    timeframe,
+    trend4hTimeline
+  );
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
+  Trend4hInfo,
 } from '../types/crypto';
 import {
   Send,
@@ -62,6 +63,7 @@ interface RightControlPanelProps {
   stats30mBySymbol: Partial<
     Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
   >;
+  trend4hBySymbol?: Partial<Record<CryptoSymbol, Trend4hInfo>>;
   timeframe: TimeframeId;
   userEmail: string | null;
   isAuthLoading: boolean;
@@ -94,6 +96,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   telegramFeedback,
   allSignals,
   stats30mBySymbol,
+  trend4hBySymbol,
   timeframe,
   userEmail,
   isAuthLoading,
@@ -119,6 +122,9 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   const isPositive24h = changePercent24h >= 0;
   const rsiVal = latestInd?.rsi ?? 50;
   const percentB = (latestInd?.bbPercentB ?? 0.5) * 100;
+  const activeTrend4h = trend4hBySymbol?.[symbol];
+  const currentBbWidth = latestInd?.bbWidth ?? 3.5;
+  const isCurrentFlat = (bjConfig.useFlatFilter ?? true) && currentBbWidth < (bjConfig.minBbWidth ?? 1.5);
 
   // Выборка максимум 50 последних сигналов
   const latest50Signals = allSignals.slice(0, 50);
@@ -131,21 +137,21 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
       : activePairStats?.rsi_bb;
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-4">
       {/* ПАНЕЛЬ 1 (Crisp White Panel): Аккаунт, цена выбранной криптовалюты, метрики 24ч и уровни RSI / Боллинджера */}
-      <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 relative z-20">
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 text-xs">
+      <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 relative z-20">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100 text-xs">
           {isAuthLoading ? (
             <span className="text-slate-400">Проверка профиля...</span>
           ) : userEmail ? (
             <>
-              <span className="font-medium text-slate-700 truncate max-w-[210px]">
+              <span className="font-medium text-slate-700 truncate max-w-[200px] sm:max-w-[210px]">
                 {userEmail}
               </span>
               <button
                 type="button"
                 onClick={onSignOutGoogle}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Выйти</span>
@@ -166,20 +172,20 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           )}
         </div>
 
-        <div className="flex items-baseline justify-between pb-4 border-b border-slate-100">
-          <div className="relative">
+        <div className="flex items-baseline justify-between gap-2 pb-4 border-b border-slate-100">
+          <div className="relative min-w-0">
             <button
               onClick={() => setIsCoinDropdownOpen((prev) => !prev)}
               className="text-xs font-bold text-slate-600 hover:text-slate-950 flex items-center gap-1 transition-colors"
             >
-              <span>
+              <span className="truncate">
                 {assetInfo.name} · {assetInfo.baseAsset}/USDT ({timeframe})
               </span>
-              <ChevronDown className="w-3.5 h-3.5" />
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
             {isCoinDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-52 bg-white text-slate-900 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.28)] border border-slate-200 p-1.5 z-50 space-y-0.5">
+              <div className="absolute left-0 top-full mt-1.5 w-56 max-w-[calc(100vw-3rem)] bg-white text-slate-900 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.28)] border border-slate-200 p-1.5 z-50 space-y-0.5">
                 {CRYPTO_ASSETS.map((a) => (
                   <button
                     key={a.symbol}
@@ -202,12 +208,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             )}
 
-            <div className="text-3xl font-bold font-mono tabular-nums tracking-tight text-slate-950 mt-1">
+            <div className="text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight text-slate-950 mt-1">
               ${formatCryptoPrice(spotPrice, symbol)}
             </div>
           </div>
 
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <div
               className={`text-sm font-mono font-bold tabular-nums ${
                 isPositive24h ? 'text-emerald-600' : 'text-rose-600'
@@ -216,29 +222,29 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               {isPositive24h ? '+' : ''}
               {changePercent24h.toFixed(2)}%
             </div>
-            <div className="text-xs font-mono text-slate-400 tabular-nums mt-0.5">
+            <div className="text-[11px] sm:text-xs font-mono text-slate-400 tabular-nums mt-0.5">
               {isPositive24h ? '+' : ''}${formatCryptoPrice(Math.abs(change24h), symbol)} за 24ч
             </div>
           </div>
         </div>
 
         {/* Строка ключевых рыночных показателей */}
-        <div className="grid grid-cols-3 gap-4 py-3.5 border-b border-slate-100 text-xs font-mono tabular-nums">
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 py-3.5 border-b border-slate-100 text-xs font-mono tabular-nums">
           <div>
             <div className="text-slate-400 font-sans">Макс 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5">
+            <div className="text-slate-900 font-semibold mt-0.5 truncate">
               ${formatCryptoPrice(high24h, symbol)}
             </div>
           </div>
           <div>
             <div className="text-slate-400 font-sans">Мин 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5">
+            <div className="text-slate-900 font-semibold mt-0.5 truncate">
               ${formatCryptoPrice(low24h, symbol)}
             </div>
           </div>
           <div>
             <div className="text-slate-400 font-sans">Объем 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5">
+            <div className="text-slate-900 font-semibold mt-0.5 truncate">
               {(volume24h / 1000).toFixed(1)}K {assetInfo.baseAsset}
             </div>
           </div>
@@ -246,7 +252,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* Текущие показатели RSI и Полос Боллинджера */}
         {latestInd && latestCandle && (
-          <div className="pt-3.5 grid grid-cols-2 gap-5">
+          <div className="pt-3.5 grid grid-cols-2 gap-3.5 sm:gap-5">
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="font-semibold text-slate-700">
@@ -318,15 +324,50 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
             </div>
           </div>
         )}
+
+        {/* Компактная строка глобального фильтра 4h EMA 200 и состояния сжатия BBW */}
+        <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums">
+          <div className="flex items-center gap-1.5 text-slate-600 font-sans">
+            <span>Тренд 4h EMA 200:</span>
+            {activeTrend4h ? (
+              <span
+                className={`font-bold ${
+                  activeTrend4h.trend === 'BULLISH'
+                    ? 'text-emerald-600'
+                    : activeTrend4h.trend === 'BEARISH'
+                    ? 'text-rose-600'
+                    : 'text-slate-500'
+                }`}
+              >
+                {activeTrend4h.trend === 'BULLISH'
+                  ? 'Бычий'
+                  : activeTrend4h.trend === 'BEARISH'
+                  ? 'Медвежий'
+                  : 'Нейтральный'}{' '}
+                ({activeTrend4h.distancePercent >= 0 ? '+' : ''}
+                {activeTrend4h.distancePercent.toFixed(1)}%)
+              </span>
+            ) : (
+              <span className="text-slate-400">Расчет...</span>
+            )}
+          </div>
+          <span
+            className={`font-semibold ${
+              isCurrentFlat ? 'text-amber-600' : 'text-slate-500'
+            }`}
+          >
+            BBW {currentBbWidth.toFixed(1)}%{isCurrentFlat ? ' · Флэт' : ''}
+          </span>
+        </div>
       </div>
 
       {/* ПАНЕЛЬ 2 (Crisp White Panel): Стратегии, Статистика 30м, Telegram-Бот и 50 последних сигналов */}
-      <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 flex flex-col flex-1">
-        {/* Навигация по разделам панели */}
-        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-4">
+      <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 flex flex-col">
+        {/* Навигация по разделам панели: 2x2 на мобильных и узких ПК, 4x1 на широких экранах */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-4">
           <button
             onClick={() => setActiveTab('strategy')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
               activeTab === 'strategy'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
@@ -338,19 +379,19 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
           <button
             onClick={() => setActiveTab('stats30m')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
               activeTab === 'stats30m'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5 shrink-0" />
-            <span>Статистика 30м</span>
+            <span>Статистика</span>
           </button>
 
           <button
             onClick={() => setActiveTab('telegram')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
               activeTab === 'telegram'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
@@ -362,7 +403,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
           <button
             onClick={() => setActiveTab('signals')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
               activeTab === 'signals'
                 ? 'bg-slate-950 text-cyan-300 shadow-sm'
                 : 'text-slate-600 hover:text-slate-950'
@@ -375,7 +416,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* ВКЛАДКА 1: Список активных стратегий с дополнительным меню описания работы и быстрым переходом к статистике 30м */}
         {activeTab === 'strategy' && (
-          <div className="space-y-3 flex-1">
+          <div className="space-y-3">
             {/* Стратегия №1: RSI + Полосы Боллинджера */}
             <div className="rounded-xl border border-slate-200 hover:border-cyan-400 transition-colors overflow-hidden">
               <div className="flex items-center justify-between p-3.5 gap-2">
@@ -445,10 +486,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               {expandedStrategyInfo === 'rsi_bb' && (
                 <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
                   <div className="font-semibold text-slate-900">
-                    Принцип работы (Контр-трендовый возврат к среднему):
+                    Принцип работы (Точный отскок + анти-спам волн):
                   </div>
                   <p className="leading-relaxed text-slate-600">
-                    Стратегия ищет моменты экстремального отклонения цены от своей скользящей средней (SMA {strategyConfig.bbPeriod}) одновременно с перегревом импульсного осциллятора RSI ({strategyConfig.rsiPeriod}).
+                    Когда цена касается полос Боллинджера и RSI ({strategyConfig.rsiPeriod}) входит в зону экстремума, стратегия взводится и ждёт точную разворотную свечу или перелом RSI (без серии спама на падающем тренде). Тренд 4h EMA 200 усиливает рейтинг до 🔥 3/3 (жёсткую блокировку можно включить в настройках RSI).
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-start gap-2">
@@ -456,7 +497,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                         BUY
                       </span>
                       <span>
-                        <strong>Покупка (Перепроданность):</strong> свеча касается или пробивает нижнюю границу Боллинджера, и одновременно <code>RSI ≤ {strategyConfig.rsiOversold}</code>.
+                        <strong>Покупка:</strong> экстремум у нижней BB при <code>RSI ≤ {strategyConfig.rsiOversold}</code> + первая бычья разворотная свеча / разворот RSI вверх, затем пауза до восстановления волны.
                       </span>
                     </div>
                     <div className="flex items-start gap-2">
@@ -464,7 +505,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                         SELL
                       </span>
                       <span>
-                        <strong>Продажа (Перекупленность):</strong> свеча касается или пробивает верхнюю границу Боллинджера, и одновременно <code>RSI ≥ {strategyConfig.rsiOverbought}</code>.
+                        <strong>Продажа:</strong> экстремум у верхней BB при <code>RSI ≥ {strategyConfig.rsiOverbought}</code> + медвежья разворотная свеча / перелом RSI вниз.
                       </span>
                     </div>
                   </div>
@@ -498,7 +539,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     </button>
                   </div>
                   <div className="text-xs font-mono text-slate-500 mt-0.5">
-                    {bjConfig.maType1}({bjConfig.maLength1}) × {bjConfig.maType2}({bjConfig.maLength2}) · R:R {bjConfig.rnr.toFixed(1)} · ATR({bjConfig.atrLen})
+                    {bjConfig.maType1}({bjConfig.maLength1}) × {bjConfig.maType2}({bjConfig.maLength2}) · R:R {bjConfig.rnr.toFixed(1)} · BBW ≥{(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%
                   </div>
 
                   {activePairStats?.bj_bot && (
@@ -541,42 +582,26 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               {expandedStrategyInfo === 'bj_bot' && (
                 <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
                   <div className="font-semibold text-slate-900">
-                    Принцип работы (Трендовый бот с авто-расчетом Stop/Target):
+                    Принцип работы (Трендовый бот + анти-флэт + безубыток):
                   </div>
                   <p className="leading-relaxed text-slate-600">
-                    Алгоритм отслеживает пересечение быстрой скользящей <strong>{bjConfig.maType1}({bjConfig.maLength1})</strong> и медленной <strong>{bjConfig.maType2}({bjConfig.maLength2})</strong>. При входе автоматически строятся уровни Stop Loss (по локальному свингу с учетом <code>ATR × {bjConfig.riskM}</code>) и Take Profit с соотношением риска к прибыли <code>R:R = 1:{bjConfig.rnr}</code>.
+                    Отслеживает пересечение <strong>{bjConfig.maType1}({bjConfig.maLength1})</strong> и <strong>{bjConfig.maType2}({bjConfig.maLength2})</strong>, фильтруя входы против тренда 4h EMA 200 и в узком флэте (<code>BBW &lt; {(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%</code>). При прохождении +50% до TP присылает уведомление о переводе Stop Loss в безубыток.
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-start gap-2">
                       <span className="px-1.5 py-0.5 rounded bg-[#3b82f6] text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
-                        LONG
+                        LONG / SHORT
                       </span>
                       <span>
-                        <strong>Вход в Лонг:</strong> пересечение быстрой MA вверх над медленной MA (открытие длинной позиции, расчет зеленой линии TP и красной линии SL).
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#f59e0b] text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
-                        SHORT
-                      </span>
-                      <span>
-                        <strong>Вход в Шорт:</strong> пересечение быстрой MA вниз под медленную MA (открытие короткой позиции).
+                        Вход по пересечению MA только вне флэта и по глобальному тренду 4h EMA 200 с авто-уровнями SL и TP (<code>R:R 1:{bjConfig.rnr}</code>).
                       </span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="px-1.5 py-0.5 rounded bg-[#a855f7] text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
-                        L EXIT
+                        EXIT / BE
                       </span>
                       <span>
-                        <strong>Выход из Лонга:</strong> закрытие Long-позиции при достижении ценой уровня Take Profit или Stop Loss (либо ATR трейлинг-стопа).
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#14b8a6] text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
-                        S EXIT
-                      </span>
-                      <span>
-                        <strong>Выход из Шорта:</strong> закрытие Short-позиции при достижении ценой уровня Take Profit или Stop Loss.
+                        Авто-закрытие по TP/SL и алерт 🛡 Безубыток на +50% пути к цели.
                       </span>
                     </div>
                   </div>
@@ -588,11 +613,11 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* ВКЛАДКА 2: СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН) ДЛЯ КАЖДОЙ ВАЛЮТЫ И КАЖДОЙ СТРАТЕГИИ */}
         {activeTab === 'stats30m' && (
-          <div className="flex-1 flex flex-col space-y-3.5">
+          <div className="flex flex-col space-y-3.5">
             {/* 1. Выбор криптовалюты */}
             <div>
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
-                <span>1. Выберите валюту (интервал 30 мин)</span>
+                <span>1. Выберите валюту (30 мин)</span>
                 <span className="font-mono text-slate-900 font-bold">
                   {assetInfo.baseAsset}/USDT
                 </span>
@@ -603,7 +628,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     key={a.symbol}
                     type="button"
                     onClick={() => onSelectSymbol(a.symbol)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 ${
+                    className={`py-2 sm:py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap ${
                       symbol === a.symbol
                         ? 'bg-slate-950 text-cyan-300 shadow-sm'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-950'
@@ -624,7 +649,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('rsi_bb')}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'rsi_bb'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
@@ -635,7 +660,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('bj_bot')}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'bj_bot'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
@@ -646,13 +671,13 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('both')}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'both'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
                   }`}
                 >
-                  Обе стратегии
+                  Обе сразу
                 </button>
               </div>
             </div>
@@ -660,21 +685,21 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
             {/* 3. Карточка показателей успешности за 30 мин */}
             {selectedStatsStrategy !== 'both' && currentSingleStats && (
               <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/60 space-y-3">
-                <div className="flex items-baseline justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 truncate">
                       {currentSingleStats.baseAsset}/USDT · {currentSingleStats.strategyTitle}
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      Таймфрейм 30 мин · Завершенных сделок: {currentSingleStats.totalTrades}
+                      Интервал 30м · Сделок: {currentSingleStats.totalTrades}
                     </div>
                   </div>
-                  <div className="text-right font-mono tabular-nums">
+                  <div className="text-right font-mono tabular-nums shrink-0">
                     <div className="text-xl font-bold text-emerald-600">
                       {currentSingleStats.winRate.toFixed(1)}%
                     </div>
                     <div className="text-[10px] text-slate-400 font-sans">
-                      Успешность (Win Rate)
+                      Успешность
                     </div>
                   </div>
                 </div>
@@ -689,7 +714,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 pt-1 text-xs font-mono tabular-nums">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-2 pt-1 text-xs font-mono tabular-nums">
                   <div>
                     <div className="text-[10px] font-sans text-slate-400">Побед / Убыт</div>
                     <div className="font-bold text-slate-900 mt-0.5">
@@ -734,7 +759,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
             {/* Режим сравнения обеих стратегий для выбранной валюты */}
             {selectedStatsStrategy === 'both' && activePairStats && (
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {[activePairStats.rsi_bb, activePairStats.bj_bot].map((st) => (
                   <div
                     key={st.strategyId}
@@ -773,11 +798,11 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
             {/* 4. Переключатель: Сводная таблица всех валют (30м) ИЛИ История сделок выбранной монеты */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setStatsSubView('all_coins')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
                     statsSubView === 'all_coins'
                       ? 'bg-slate-900 text-white'
                       : 'text-slate-500 hover:text-slate-900'
@@ -788,7 +813,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setStatsSubView('trades')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
                     statsSubView === 'trades'
                       ? 'bg-slate-900 text-white'
                       : 'text-slate-500 hover:text-slate-900'
@@ -800,7 +825,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
             </div>
 
             {statsSubView === 'all_coins' ? (
-              <div className="divide-y divide-slate-100 max-h-[210px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
+              <div className="divide-y divide-slate-100 max-h-[250px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
                 {CRYPTO_ASSETS.map((a) => {
                   const row = stats30mBySymbol[a.symbol];
                   if (!row) return null;
@@ -813,15 +838,15 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       key={a.symbol}
                       type="button"
                       onClick={() => onSelectSymbol(a.symbol)}
-                      className={`w-full py-2 px-2 flex items-center justify-between rounded-lg transition-colors text-left ${
+                      className={`w-full py-2.5 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 rounded-lg transition-colors text-left ${
                         isSelected ? 'bg-cyan-50/90' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <div className="font-bold text-slate-950 w-20 shrink-0">
+                      <div className="font-bold text-slate-950 shrink-0">
                         {a.baseAsset}/USDT
                       </div>
-                      <div className="flex-1 flex items-center justify-end gap-3">
-                        <div className="text-right">
+                      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                        <div className="sm:text-right">
                           <span className="text-[10px] font-sans text-slate-400 mr-1">
                             RSI+BB:
                           </span>
@@ -859,14 +884,14 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 })}
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[210px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
+              <div className="divide-y divide-slate-100 max-h-[250px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
                 {(currentSingleStats?.trades || []).slice(0, 20).map((t) => (
                   <div
                     key={t.id}
-                    className="py-2 px-1.5 flex items-center justify-between"
+                    className="py-2.5 px-1.5 flex items-center justify-between gap-2"
                   >
-                    <div>
-                      <div className="flex items-center gap-1.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                             t.direction === 'LONG'
@@ -895,7 +920,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     </div>
 
                     <div
-                      className={`font-bold ${
+                      className={`font-bold shrink-0 ${
                         t.isWin ? 'text-emerald-600' : 'text-rose-600'
                       }`}
                     >
@@ -908,12 +933,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
             )}
 
             {/* 5. Кнопки отправки статистики и интерактивного меню выбора в Telegram */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 mt-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onSendTelegramStatsMenu}
                 disabled={isSendingTelegram}
-                className="py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="py-2.5 sm:py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
               >
                 <Send className="w-3.5 h-3.5 shrink-0" />
                 <span>Кнопка выбора в ТГ</span>
@@ -925,7 +950,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   onSendSelectedStatsTelegram(symbol, selectedStatsStrategy)
                 }
                 disabled={isSendingTelegram}
-                className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="py-2.5 sm:py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
               >
                 <TrendingUp className="w-3.5 h-3.5 shrink-0" />
                 <span>Отчет {assetInfo.baseAsset} в ТГ</span>
@@ -936,15 +961,15 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* ВКЛАДКА 3: Настройка Telegram-Бота */}
         {activeTab === 'telegram' && (
-          <div className="space-y-4 flex-1 flex flex-col justify-between">
+          <div className="space-y-4 flex flex-col justify-between">
             <div className="space-y-3.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-slate-900">
                   Уведомления и кнопки в Telegram
                 </span>
                 <button
                   onClick={() => setShowTgHelp(!showTgHelp)}
-                  className="text-xs font-medium text-cyan-600 hover:text-cyan-700 flex items-center gap-1"
+                  className="text-xs font-medium text-cyan-600 hover:text-cyan-700 flex items-center gap-1 shrink-0"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                   <span>Инструкция</span>
@@ -956,7 +981,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   <div>1. Создайте бота в <strong>@BotFather</strong> и скопируйте <strong>Token</strong>.</div>
                   <div>2. Нажмите <code>/start</code> в диалоге с вашим ботом.</div>
                   <div>3. Узнайте ваш <strong>Chat ID</strong> через <strong>@userinfobot</strong>.</div>
-                  <div>4. В боте появится кнопка <strong>«📊 Статистика сделок (30 мин)»</strong> с выбором валюты и стратегии.</div>
+                  <div>4. В боте появятся 4 кнопки: <strong>Статистика</strong>, <strong>Топ связок</strong>, <strong>Статус 4h</strong> и <strong>Фильтр</strong>.</div>
                 </div>
               )}
 
@@ -996,7 +1021,38 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 />
               </div>
 
-              <label className="flex items-center justify-between pt-2 border-t border-slate-100 cursor-pointer">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  Минимальная сила сигнала для ТГ (Confluence)
+                </label>
+                <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+                  {([
+                    { score: 1 as const, label: 'Все 1/3+' },
+                    { score: 2 as const, label: 'От 2/3' },
+                    { score: 3 as const, label: 'Только 🔥 3/3' },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.score}
+                      type="button"
+                      onClick={() =>
+                        onUpdateTelegram({
+                          ...telegramConfig,
+                          minConfluenceScore: opt.score,
+                        })
+                      }
+                      className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                        (telegramConfig.minConfluenceScore ?? 1) === opt.score
+                          ? 'bg-slate-950 text-cyan-300 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-950'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 cursor-pointer">
                 <div className="text-xs font-semibold text-slate-800">
                   Авто-уведомление по всем криптовалютам
                 </div>
@@ -1009,7 +1065,24 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       autoNotify: e.target.checked,
                     })
                   }
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-2 pt-1 cursor-pointer">
+                <div className="text-xs font-semibold text-slate-800">
+                  Алерт безубытка Bj Bot (+50% до TP)
+                </div>
+                <input
+                  type="checkbox"
+                  checked={telegramConfig.notifyBreakeven ?? true}
+                  onChange={(e) =>
+                    onUpdateTelegram({
+                      ...telegramConfig,
+                      notifyBreakeven: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
                 />
               </label>
 
@@ -1031,28 +1104,28 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               <button
                 onClick={onSendTelegramStatsMenu}
                 disabled={isSendingTelegram}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
               >
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>📊 Отправить кнопку статистики (30м) в ТГ-бот</span>
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                <span>📊 Меню статистики (30м) в ТГ</span>
               </button>
 
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={onSendTestTelegram}
                   disabled={isSendingTelegram}
-                  className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                  className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  <Send className="w-3.5 h-3.5 shrink-0" />
                   <span>Тест бота</span>
                 </button>
 
                 <button
                   onClick={onSendManualSummaryTelegram}
                   disabled={isSendingTelegram}
-                  className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                  className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                 >
-                  <Bell className="w-3.5 h-3.5" />
+                  <Bell className="w-3.5 h-3.5 shrink-0" />
                   <span>Сводка в ТГ</span>
                 </button>
               </div>
@@ -1062,13 +1135,13 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* ВКЛАДКА 4: Максимум 50 последних сигналов по всем криптовалютам */}
         {activeTab === 'signals' && (
-          <div className="flex-1 flex flex-col">
+          <div className="flex flex-col">
             {latest50Signals.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-400">
                 На выбранном интервале ({timeframe}) сигналов не найдено.
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[340px] overflow-y-auto pr-1">
+              <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto pr-1">
                 {latest50Signals.map((sig) => {
                   let badgeLabel = 'BUY';
                   let badgeStyle = 'bg-[#00f0ff] text-slate-950';
@@ -1091,7 +1164,23 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   } else if (sig.type === 'S EXIT') {
                     badgeLabel = 'S EXIT';
                     badgeStyle = 'bg-[#14b8a6] text-slate-950';
+                  } else if (sig.type === 'BREAKEVEN') {
+                    badgeLabel = 'BE 50%';
+                    badgeStyle = 'bg-emerald-600 text-white';
                   }
+
+                  const scoreText =
+                    sig.confluenceScore === 3
+                      ? '🔥 3/3'
+                      : sig.confluenceScore === 2
+                      ? '⚡ 2/3'
+                      : '1/3';
+                  const scoreColor =
+                    sig.confluenceScore === 3
+                      ? 'text-amber-600 font-bold'
+                      : sig.confluenceScore === 2
+                      ? 'text-cyan-700 font-semibold'
+                      : 'text-slate-400';
 
                   return (
                     <button
@@ -1100,7 +1189,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       className="w-full py-2.5 px-1.5 hover:bg-slate-50 rounded-lg flex items-center justify-between text-xs font-mono tabular-nums text-left transition-colors"
                     >
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-slate-950">
                             {sig.baseAsset}/USDT
                           </span>
@@ -1112,6 +1201,11 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           >
                             {badgeLabel}
                           </span>
+                          {sig.confluenceScore && (
+                            <span className={`text-[10px] ${scoreColor}`}>
+                              {scoreText}
+                            </span>
+                          )}
                           <span className="text-slate-900 font-semibold">
                             ${formatCryptoPrice(sig.price, sig.symbol)}
                           </span>

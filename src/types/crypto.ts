@@ -154,6 +154,18 @@ export interface VolatilityMetrics {
   efficiencyRatioGK: number;
 }
 
+export type Trend4hDirection = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+export interface Trend4hInfo {
+  symbol: CryptoSymbol;
+  trend: Trend4hDirection;
+  price: number;
+  ema200: number;
+  ema200Rising: boolean;
+  distancePercent: number;
+  updatedAt: number;
+}
+
 export interface RsiBbStrategyConfig {
   enabled: boolean;
   rsiPeriod: number;
@@ -162,6 +174,9 @@ export interface RsiBbStrategyConfig {
   bbPeriod: number;
   bbStdDev: number;
   requireStrictTouch: boolean;
+  requireReversalCandle?: boolean;
+  use4hTrendFilter?: boolean;
+  cooldownBars?: number;
 }
 
 export type BjMaType = 'EMA' | 'HEMA' | 'SMA' | 'HMA' | 'WMA' | 'DEMA' | 'VWMA' | 'VWAP' | 'T3';
@@ -186,6 +201,9 @@ export interface BjBotConfig {
   maLength2: number; // default 50
   drawEntry: boolean;
   exitLvl: boolean;
+  use4hTrendFilter?: boolean;
+  useFlatFilter?: boolean;
+  minBbWidth?: number;
 }
 
 export type BjBotSignalType = 'LONG' | 'SHORT' | 'L EXIT' | 'S EXIT';
@@ -200,6 +218,10 @@ export interface BjBotBarPoint {
   targetPrice: number | null;
   triggerExitPrice: number | null;
   signal: BjBotSignalType | null;
+  activePosition?: 0 | 1 | -1;
+  activeEntryPrice?: number | null;
+  activeEntryTimestamp?: number | null;
+  breakevenTriggered?: boolean;
 }
 
 export type StrategySignalType =
@@ -208,7 +230,8 @@ export type StrategySignalType =
   | 'LONG'
   | 'SHORT'
   | 'L EXIT'
-  | 'S EXIT';
+  | 'S EXIT'
+  | 'BREAKEVEN';
 
 export interface StrategySignalEvent {
   id: string;
@@ -225,6 +248,12 @@ export interface StrategySignalEvent {
   percentB: number;
   stopPrice?: number;
   targetPrice?: number;
+  entryPrice?: number;
+  confluenceScore?: 1 | 2 | 3;
+  confluenceReasons?: string[];
+  trend4h?: Trend4hDirection;
+  volumeRatio?: number;
+  bbWidth?: number;
   timeframe: TimeframeId;
   telegramSent: boolean;
   telegramError?: string;
@@ -234,6 +263,8 @@ export interface TelegramConfig {
   botToken: string;
   chatId: string;
   autoNotify: boolean;
+  minConfluenceScore?: 1 | 2 | 3;
+  notifyBreakeven?: boolean;
 }
 
 export type ExchangeId = 'binance' | 'coinbase' | 'kraken' | 'coingecko';

@@ -19,13 +19,19 @@ import {
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
+  Trend4hInfo,
 } from './src/types/crypto.ts';
 import { fetchHistoricalCandles } from './src/services/exchangeService.ts';
 import { computeIndicators } from './src/math/indicators.ts';
 import { computeBjBotSeries } from './src/math/bjBot.ts';
+import {
+  build4hTrendTimeline,
+  computeLatest4hTrendInfo,
+  Trend4hTimelinePoint,
+} from './src/math/trendFilter.ts';
 import { evaluateStrategyStats } from './src/math/strategyStats.ts';
 import {
-  evaluateCandleConfluence,
+  detectRsiBbSignals,
   formatSignalTelegramMessage,
   processTelegramBotUpdate,
   sendTelegramAlert,
@@ -33,6 +39,7 @@ import {
 import { AuthRequest, requireAuth } from './src/middleware/auth.ts';
 import { isDatabaseConfigured } from './src/db/index.ts';
 import {
+  cleanupOldSentSignals,
   getAll30mStatsFromDb,
   getLatestBotConfig,
   getPairStats30mFromDb,
@@ -40,6 +47,7 @@ import {
   getUserBotConfig,
   markSignalSentInDb,
   saveCompletedTrades30m,
+  updateLatestTelegramConfigInDb,
   upsertUserBotConfig,
 } from './src/db/repository.ts';
 
@@ -52,6 +60,8 @@ const PORT = Number(process.env.PORT) || 3000;
 const SERVER_SCAN_INTERVAL_MS = 15000;
 const STATS_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const STATS_CACHE_TTL_MS = 30000;
+const TREND_4H_REFRESH_MS = 45 * 60 * 1000;
+const SENT_SIGNALS_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 interface ServerBotState {
   exchange: ExchangeId;
@@ -74,6 +84,9 @@ const defaultState: ServerBotState = {
     bbPeriod: 20,
     bbStdDev: 2.0,
     requireStrictTouch: false,
+    requireReversalCandle: true,
+    use4hTrendFilter: false,
+    cooldownBars: 4,
   },
   bjConfig: {
     enabled: true,
@@ -95,11 +108,16 @@ const defaultState: ServerBotState = {
     maLength2: 50,
     drawEntry: false,
     exitLvl: true,
+    use4hTrendFilter: true,
+    useFlatFilter: true,
+    minBbWidth: 1.5,
   },
   telegramConfig: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
     autoNotify: true,
+    minConfluenceScore: 1,
+    notifyBreakeven: true,
   },
   sentSignalIds: [],
   lastScanAt: null,
@@ -111,6 +129,7 @@ let dbHydrated = false;
 let isScanning = false;
 let lastStatsSyncAt = 0;
 let isSyncingStats = false;
+let lastSentSignalsCleanupAt = 0;
 
 let cachedStats30m: {
   updatedAt: number;
@@ -118,6 +137,60 @@ let cachedStats30m: {
     Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
   >;
 } | null = null;
+
+const trend4hCache: Record<
+  string,
+  {
+    updatedAt: number;
+    timeline: Trend4hTimelinePoint[];
+    latest: Trend4hInfo;
+  }
+> = {};
+
+async function getCached4hTrend(
+  symbol: CryptoSymbol,
+  exchange: ExchangeId
+): Promise<{ timeline: Trend4hTimelinePoint[]; latest: Trend4hInfo }> {
+  const key = `${exchange}:${symbol}`;
+  const existing = trend4hCache[key];
+  if (existing && Date.now() - existing.updatedAt < TREND_4H_REFRESH_MS) {
+    return existing;
+  }
+
+  try {
+    const market4h = await fetchHistoricalCandles(exchange, '4h', 250, symbol);
+    const timeline = build4hTrendTimeline(symbol, market4h.candles);
+    const latest =
+      timeline.length > 0
+        ? timeline[timeline.length - 1].info
+        : computeLatest4hTrendInfo(symbol, market4h.candles);
+
+    const entry = {
+      updatedAt: Date.now(),
+      timeline,
+      latest,
+    };
+    trend4hCache[key] = entry;
+    return entry;
+  } catch {
+    if (existing) return existing;
+    return {
+      timeline: [],
+      latest: computeLatest4hTrendInfo(symbol, []),
+    };
+  }
+}
+
+async function runSentSignalsCleanupIfNeeded(): Promise<void> {
+  if (!isDatabaseConfigured()) return;
+  if (Date.now() - lastSentSignalsCleanupAt < SENT_SIGNALS_CLEANUP_INTERVAL_MS) return;
+  lastSentSignalsCleanupAt = Date.now();
+  try {
+    await cleanupOldSentSignals(14);
+  } catch {
+    // ignore cleanup failure
+  }
+}
 
 function rememberSignalId(signalId: string): void {
   if (!sentSet.has(signalId)) {
@@ -177,12 +250,10 @@ async function sync30mTradesToPostgres(): Promise<void> {
 
     for (const asset of CRYPTO_ASSETS) {
       try {
-        const market30m = await fetchHistoricalCandles(
-          exchange,
-          '30m',
-          180,
-          asset.symbol
-        );
+        const [market30m, trend4h] = await Promise.all([
+          fetchHistoricalCandles(exchange, '30m', 180, asset.symbol),
+          getCached4hTrend(asset.symbol, exchange),
+        ]);
         const candles = market30m.candles;
         if (!candles || candles.length < 30) continue;
 
@@ -194,7 +265,8 @@ async function sync30mTradesToPostgres(): Promise<void> {
           bjConfig,
           asset.symbol,
           'rsi_bb',
-          '30m'
+          '30m',
+          trend4h.timeline
         );
         const bjStats = evaluateStrategyStats(
           candles,
@@ -202,7 +274,8 @@ async function sync30mTradesToPostgres(): Promise<void> {
           bjConfig,
           asset.symbol,
           'bj_bot',
-          '30m'
+          '30m',
+          trend4h.timeline
         );
 
         for (const t of [...rsiStats.trades, ...bjStats.trades]) {
@@ -255,6 +328,7 @@ async function runServerMarketScan(): Promise<void> {
 
   try {
     await hydrateStateFromDbOnce();
+    await runSentSignalsCleanupIfNeeded();
 
     if (Date.now() - lastStatsSyncAt >= STATS_SYNC_INTERVAL_MS) {
       await sync30mTradesToPostgres();
@@ -272,14 +346,15 @@ async function runServerMarketScan(): Promise<void> {
       return;
     }
 
+    const minScore = telegramConfig.minConfluenceScore ?? 1;
+    const notifyBe = telegramConfig.notifyBreakeven ?? true;
+
     for (const asset of CRYPTO_ASSETS) {
       try {
-        const market = await fetchHistoricalCandles(
-          exchange,
-          timeframe,
-          160,
-          asset.symbol
-        );
+        const [market, trend4h] = await Promise.all([
+          fetchHistoricalCandles(exchange, timeframe, 160, asset.symbol),
+          getCached4hTrend(asset.symbol, exchange),
+        ]);
         const cList = market.candles;
         if (!cList || cList.length < 30) continue;
 
@@ -292,28 +367,76 @@ async function runServerMarketScan(): Promise<void> {
         const lastC = cList[cList.length - 1];
         const lastI = indList[indList.length - 1];
 
-        // 1. Проверка стратегии №1: RSI + Полосы Боллинджера
+        // 1. Проверка стратегии №1: RSI + Полосы Боллинджера (с подтверждением разворота, без спама)
         if (strategyConfig.enabled) {
-          const confluence = evaluateCandleConfluence(lastC, lastI, strategyConfig);
-          if (confluence.activeSignal !== 'NONE') {
-            const signalId = `${asset.symbol}-${timeframe}-${lastC.timestamp}-${confluence.activeSignal}`;
-            if (!sentSet.has(signalId)) {
-              rememberSignalId(signalId);
+          const rsiSignals = detectRsiBbSignals(
+            cList,
+            indList,
+            strategyConfig,
+            timeframe,
+            asset.symbol,
+            {
+              trend4hTimeline: trend4h.timeline,
+              latestTrend4h: trend4h.latest,
+              minBbWidth: bjConfig.minBbWidth ?? 1.5,
+            }
+          );
+          const latestRsiSig = rsiSignals.find(
+            (s) => s.candleTimestamp === lastC.timestamp
+          );
+          if (
+            latestRsiSig &&
+            (latestRsiSig.confluenceScore ?? 1) >= minScore &&
+            !sentSet.has(latestRsiSig.id)
+          ) {
+            rememberSignalId(latestRsiSig.id);
+            const signalEvent: StrategySignalEvent = {
+              ...latestRsiSig,
+              telegramSent: true,
+            };
 
+            const msg = formatSignalTelegramMessage(
+              signalEvent,
+              exchange,
+              strategyConfig,
+              bjConfig
+            );
+            const res = await sendTelegramAlert(telegramConfig, msg);
+            if (!res.ok) {
+              sentSet.delete(latestRsiSig.id);
+            } else {
+              await markSignalSentInDb(signalEvent).catch(() => {});
+            }
+          }
+        }
+
+        // 2. Проверка стратегии №2: Bj Bot (с фильтром флэта, 4h EMA 200, рейтингом и безубытком +50%)
+        if (bjConfig.enabled) {
+          const bjData = computeBjBotSeries(
+            cList,
+            indList,
+            bjConfig,
+            timeframe,
+            asset.symbol,
+            {
+              trend4hTimeline: trend4h.timeline,
+              latestTrend4h: trend4h.latest,
+            }
+          );
+          if (bjData.bars.length > 0) {
+            const lastBjBar = bjData.bars[bjData.bars.length - 1];
+            const latestBjSig = bjData.signals.find(
+              (s) => s.candleTimestamp === lastC.timestamp
+            );
+
+            if (
+              latestBjSig &&
+              (latestBjSig.confluenceScore ?? 1) >= minScore &&
+              !sentSet.has(latestBjSig.id)
+            ) {
+              rememberSignalId(latestBjSig.id);
               const signalEvent: StrategySignalEvent = {
-                id: signalId,
-                strategyName: 'RSI+BB',
-                symbol: asset.symbol,
-                baseAsset: asset.baseAsset,
-                timestamp: Date.now(),
-                candleTimestamp: lastC.timestamp,
-                type: confluence.activeSignal,
-                price: lastC.close,
-                rsiValue: lastI.rsi,
-                bbUpper: lastI.bbUpper,
-                bbLower: lastI.bbLower,
-                percentB: lastI.bbPercentB,
-                timeframe,
+                ...latestBjSig,
                 telegramSent: true,
               };
 
@@ -325,60 +448,53 @@ async function runServerMarketScan(): Promise<void> {
               );
               const res = await sendTelegramAlert(telegramConfig, msg);
               if (!res.ok) {
-                sentSet.delete(signalId);
+                sentSet.delete(latestBjSig.id);
               } else {
                 await markSignalSentInDb(signalEvent).catch(() => {});
               }
             }
-          }
-        }
 
-        // 2. Проверка стратегии №2: Bj Bot (3Commas Bot)
-        if (bjConfig.enabled) {
-          const bjData = computeBjBotSeries(
-            cList,
-            indList,
-            bjConfig,
-            timeframe,
-            asset.symbol
-          );
-          if (bjData.bars.length > 0) {
-            const lastBjBar = bjData.bars[bjData.bars.length - 1];
-            if (lastBjBar.signal !== null) {
-              const signalId = `${asset.symbol}-${timeframe}-${lastC.timestamp}-${lastBjBar.signal}`;
-              if (!sentSet.has(signalId)) {
-                rememberSignalId(signalId);
-
-                const signalEvent: StrategySignalEvent = {
-                  id: signalId,
+            // Проверка перевода SL в безубыток (+50% пути к TP)
+            if (
+              notifyBe &&
+              lastBjBar.breakevenTriggered &&
+              lastBjBar.activeEntryTimestamp &&
+              lastBjBar.activeEntryPrice
+            ) {
+              const beId = `${asset.symbol}-${timeframe}-${lastBjBar.activeEntryTimestamp}-BREAKEVEN`;
+              if (!sentSet.has(beId)) {
+                rememberSignalId(beId);
+                const beEvent: StrategySignalEvent = {
+                  id: beId,
                   strategyName: 'Bj Bot',
                   symbol: asset.symbol,
                   baseAsset: asset.baseAsset,
                   timestamp: Date.now(),
                   candleTimestamp: lastC.timestamp,
-                  type: lastBjBar.signal,
+                  type: 'BREAKEVEN',
                   price: lastC.close,
+                  entryPrice: lastBjBar.activeEntryPrice,
+                  targetPrice: lastBjBar.targetPrice ?? undefined,
                   rsiValue: lastI.rsi,
                   bbUpper: lastI.bbUpper,
                   bbLower: lastI.bbLower,
                   percentB: lastI.bbPercentB,
-                  stopPrice: lastBjBar.stopPrice ?? undefined,
-                  targetPrice: lastBjBar.targetPrice ?? undefined,
+                  confluenceScore: 3,
                   timeframe,
                   telegramSent: true,
                 };
 
-                const msg = formatSignalTelegramMessage(
-                  signalEvent,
+                const beMsg = formatSignalTelegramMessage(
+                  beEvent,
                   exchange,
                   strategyConfig,
                   bjConfig
                 );
-                const res = await sendTelegramAlert(telegramConfig, msg);
+                const res = await sendTelegramAlert(telegramConfig, beMsg);
                 if (!res.ok) {
-                  sentSet.delete(signalId);
+                  sentSet.delete(beId);
                 } else {
-                  await markSignalSentInDb(signalEvent).catch(() => {});
+                  await markSignalSentInDb(beEvent).catch(() => {});
                 }
               }
             }
@@ -407,6 +523,28 @@ async function startServer() {
       timeframe: botState.timeframe,
       exchange: botState.exchange,
     });
+  });
+
+  // Кэшированный срез старшего тренда 4h EMA 200 по всем 8 монетам (обновляется раз в 45 мин)
+  app.get('/api/market/trend4h', async (req, res) => {
+    try {
+      const ex = (typeof req.query.exchange === 'string'
+        ? req.query.exchange
+        : botState.exchange) as ExchangeId;
+      const entries = await Promise.all(
+        CRYPTO_ASSETS.map(async (asset) => {
+          const data = await getCached4hTrend(asset.symbol, ex);
+          return [asset.symbol, data.latest] as const;
+        })
+      );
+      const trends: Partial<Record<CryptoSymbol, Trend4hInfo>> = {};
+      for (const [sym, info] of entries) {
+        trends[sym] = info;
+      }
+      res.json({ trends });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to compute 4h trends' });
+    }
   });
 
   // Проверка текущей авторизации пользователя
@@ -586,49 +724,140 @@ async function startServer() {
             botState.exchange,
             botState.strategyConfig,
             botState.bjConfig,
-            isDatabaseConfigured()
-              ? {
-                  getPairStats30m: async (sym) => {
-                    let pair = await getPairStats30mFromDb(sym);
-                    if (
-                      pair.rsi_bb.totalTrades === 0 &&
-                      pair.bj_bot.totalTrades === 0
-                    ) {
-                      await sync30mTradesToPostgres();
-                      pair = await getPairStats30mFromDb(sym);
-                    }
-                    return pair;
-                  },
-                  getAllSummary30m: async () => {
-                    const all = await getCachedAll30mStats();
-                    return CRYPTO_ASSETS.map((a) => {
-                      const entry = all[a.symbol];
-                      return {
-                        rsi:
-                          entry?.rsi_bb ||
-                          evaluateStrategyStats(
-                            [],
-                            botState.strategyConfig,
-                            botState.bjConfig,
-                            a.symbol,
-                            'rsi_bb',
-                            '30m'
-                          ),
-                        bj:
-                          entry?.bj_bot ||
-                          evaluateStrategyStats(
-                            [],
-                            botState.strategyConfig,
-                            botState.bjConfig,
-                            a.symbol,
-                            'bj_bot',
-                            '30m'
-                          ),
-                      };
-                    });
-                  },
+            {
+              getPairStats30m: async (sym) => {
+                if (isDatabaseConfigured()) {
+                  let pair = await getPairStats30mFromDb(sym);
+                  if (
+                    pair.rsi_bb.totalTrades === 0 &&
+                    pair.bj_bot.totalTrades === 0
+                  ) {
+                    await sync30mTradesToPostgres();
+                    pair = await getPairStats30mFromDb(sym);
+                  }
+                  return pair;
                 }
-              : undefined
+                const [market30m, trend4h] = await Promise.all([
+                  fetchHistoricalCandles(botState.exchange, '30m', 220, sym),
+                  getCached4hTrend(sym, botState.exchange),
+                ]);
+                return {
+                  rsi_bb: evaluateStrategyStats(
+                    market30m.candles,
+                    botState.strategyConfig,
+                    botState.bjConfig,
+                    sym,
+                    'rsi_bb',
+                    '30m',
+                    trend4h.timeline
+                  ),
+                  bj_bot: evaluateStrategyStats(
+                    market30m.candles,
+                    botState.strategyConfig,
+                    botState.bjConfig,
+                    sym,
+                    'bj_bot',
+                    '30m',
+                    trend4h.timeline
+                  ),
+                };
+              },
+              getAllSummary30m: async () => {
+                if (isDatabaseConfigured()) {
+                  const all = await getCachedAll30mStats();
+                  return CRYPTO_ASSETS.map((a) => {
+                    const entry = all[a.symbol];
+                    return {
+                      rsi:
+                        entry?.rsi_bb ||
+                        evaluateStrategyStats(
+                          [],
+                          botState.strategyConfig,
+                          botState.bjConfig,
+                          a.symbol,
+                          'rsi_bb',
+                          '30m'
+                        ),
+                      bj:
+                        entry?.bj_bot ||
+                        evaluateStrategyStats(
+                          [],
+                          botState.strategyConfig,
+                          botState.bjConfig,
+                          a.symbol,
+                          'bj_bot',
+                          '30m'
+                        ),
+                    };
+                  });
+                }
+                return Promise.all(
+                  CRYPTO_ASSETS.map(async (asset) => {
+                    const [m30, t4h] = await Promise.all([
+                      fetchHistoricalCandles(botState.exchange, '30m', 180, asset.symbol),
+                      getCached4hTrend(asset.symbol, botState.exchange),
+                    ]);
+                    return {
+                      rsi: evaluateStrategyStats(
+                        m30.candles,
+                        botState.strategyConfig,
+                        botState.bjConfig,
+                        asset.symbol,
+                        'rsi_bb',
+                        '30m',
+                        t4h.timeline
+                      ),
+                      bj: evaluateStrategyStats(
+                        m30.candles,
+                        botState.strategyConfig,
+                        botState.bjConfig,
+                        asset.symbol,
+                        'bj_bot',
+                        '30m',
+                        t4h.timeline
+                      ),
+                    };
+                  })
+                );
+              },
+              getMarketOverview4h: async () => {
+                return Promise.all(
+                  CRYPTO_ASSETS.map(async (asset) => {
+                    const [t4h, m30] = await Promise.all([
+                      getCached4hTrend(asset.symbol, botState.exchange),
+                      fetchHistoricalCandles(botState.exchange, '30m', 60, asset.symbol),
+                    ]);
+                    const inds = computeIndicators(m30.candles, {
+                      rsiPeriod: botState.strategyConfig.rsiPeriod,
+                      bbPeriod: botState.strategyConfig.bbPeriod,
+                      bbStdDev: botState.strategyConfig.bbStdDev,
+                    }).indicators;
+                    const lastInd = inds[inds.length - 1];
+                    const lastPrice =
+                      m30.candles[m30.candles.length - 1]?.close ||
+                      t4h.latest.price ||
+                      asset.seedPrice;
+                    return {
+                      symbol: asset.symbol,
+                      baseAsset: asset.baseAsset,
+                      price: lastPrice,
+                      trend4h: t4h.latest,
+                      rsi30m: lastInd?.rsi ?? 50,
+                      bbWidth30m: lastInd?.bbWidth ?? 3.5,
+                    };
+                  })
+                );
+              },
+              getTelegramConfig: () => botState.telegramConfig,
+              updateTelegramConfig: async (patch) => {
+                botState.telegramConfig = {
+                  ...botState.telegramConfig,
+                  ...patch,
+                };
+                await updateLatestTelegramConfigInDb(botState.telegramConfig).catch(() => {});
+                return botState.telegramConfig;
+              },
+            }
           );
         }
       }
@@ -645,6 +874,7 @@ async function startServer() {
     runServerMarketScan();
     setInterval(runServerMarketScan, SERVER_SCAN_INTERVAL_MS);
     setInterval(pollServerTelegramUpdates, 2500);
+    setInterval(runSentSignalsCleanupIfNeeded, SENT_SIGNALS_CLEANUP_INTERVAL_MS);
   });
 }
 

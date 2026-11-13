@@ -8,6 +8,7 @@ import {
   Candle,
   CRYPTO_ASSETS,
   CryptoSymbol,
+  ExchangeId,
   formatCryptoPrice,
   Indicators,
   RsiBbStrategyConfig,
@@ -15,9 +16,18 @@ import {
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
-  ExchangeId,
+  Trend4hInfo,
 } from '../types/crypto';
 import { fetchHistoricalCandles } from './exchangeService';
+import { computeIndicators } from '../math/indicators';
+import {
+  computeConfluenceScore,
+  computeLatest4hTrendInfo,
+  computeVolumeRatio,
+  get4hTrendAtTimestamp,
+  isSignalAllowedBy4hTrend,
+  Trend4hTimelinePoint,
+} from '../math/trendFilter';
 import {
   evaluateStrategyStats,
   formatTelegramAllCoinsSummary,
@@ -43,11 +53,11 @@ export function evaluateCandleConfluence(
 
   const isBbOversold = config.requireStrictTouch
     ? candle.close <= ind.bbLower || candle.low <= ind.bbLower
-    : ind.bbPercentB <= 0.10;
+    : ind.bbPercentB <= 0.1;
 
   const isBbOverbought = config.requireStrictTouch
     ? candle.close >= ind.bbUpper || candle.high >= ind.bbUpper
-    : ind.bbPercentB >= 0.90;
+    : ind.bbPercentB >= 0.9;
 
   let activeSignal: 'OVERSOLD_BUY' | 'OVERBOUGHT_SELL' | 'NONE' = 'NONE';
   if (config.enabled) {
@@ -67,12 +77,25 @@ export function evaluateCandleConfluence(
   };
 }
 
+/**
+ * Улучшенная стратегия RSI + Полосы Боллинджера (точные точки входа без спама):
+ * 1) «Взводит» сетап (armed), когда RSI и цена заходят в зону экстремума (перепроданность/перекупленность);
+ * 2) Вместо спама на каждой подряд красной/зелёной свече ждёт точного подтверждения разворота
+ *    (разворотная свеча, перелом RSI в нужную сторону или длинная тень отклонения);
+ * 3) После срабатывания включает cooldown + ожидание разгрузки RSI/возврата цены, чтобы не дублировать входы на одной волне;
+ * 4) Начисляет Confluence Score (1/3..3/3) с учётом тренда 4h EMA 200 и объёма (опционально может строго фильтровать по 4h).
+ */
 export function detectRsiBbSignals(
   candles: Candle[],
   indicators: Indicators[],
   config: RsiBbStrategyConfig,
   timeframe: TimeframeId,
-  symbol: CryptoSymbol = 'BTCUSDT'
+  symbol: CryptoSymbol = 'BTCUSDT',
+  options?: {
+    trend4hTimeline?: Trend4hTimelinePoint[];
+    latestTrend4h?: Trend4hInfo | null;
+    minBbWidth?: number;
+  }
 ): StrategySignalEvent[] {
   if (!config.enabled || candles.length === 0 || indicators.length !== candles.length) {
     return [];
@@ -82,25 +105,131 @@ export function detectRsiBbSignals(
   const signals: StrategySignalEvent[] = [];
   const warmup = Math.max(config.rsiPeriod, config.bbPeriod);
 
+  const requireReversal = config.requireReversalCandle ?? true;
+  const use4hTrendFilter = config.use4hTrendFilter ?? false;
+  const cooldownBars = Math.max(2, config.cooldownBars ?? 4);
+  const minBbWidth = options?.minBbWidth ?? 1.5;
+
+  let buyArmedBar: number | null = null;
+  let sellArmedBar: number | null = null;
+  let buyCooldownUntil = -1;
+  let sellCooldownUntil = -1;
+  let buyNeedsReset = false;
+  let sellNeedsReset = false;
+
   for (let i = warmup; i < candles.length; i++) {
     const c = candles[i];
     const ind = indicators[i];
+    const prevInd = i > 0 ? indicators[i - 1] : ind;
     const status = evaluateCandleConfluence(c, ind, config);
 
-    if (status.activeSignal !== 'NONE') {
+    // Сброс блокировки спама, когда RSI остыл/разгрузился или цена дошла до средней линии BB
+    if (buyNeedsReset && i >= buyCooldownUntil) {
+      if (ind.rsi >= config.rsiOversold + 5 || c.close >= ind.bbMiddle) {
+        buyNeedsReset = false;
+      }
+    }
+    if (sellNeedsReset && i >= sellCooldownUntil) {
+      if (ind.rsi <= config.rsiOverbought - 5 || c.close <= ind.bbMiddle) {
+        sellNeedsReset = false;
+      }
+    }
+
+    // Взведение сетапа при входе в перепроданность / перекупленность (только для новой волны)
+    if (!buyNeedsReset && status.activeSignal === 'OVERSOLD_BUY') {
+      buyArmedBar = i;
+      sellArmedBar = null;
+    } else if (!sellNeedsReset && status.activeSignal === 'OVERBOUGHT_SELL') {
+      sellArmedBar = i;
+      buyArmedBar = null;
+    }
+
+    // Сброс устаревшего сетапа, если прошло > 5 свечей или RSI уже полностью ушёл в противоположную зону
+    if (buyArmedBar !== null && (i - buyArmedBar > 5 || ind.rsi > 55)) {
+      buyArmedBar = null;
+    }
+    if (sellArmedBar !== null && (i - sellArmedBar > 5 || ind.rsi < 45)) {
+      sellArmedBar = null;
+    }
+
+    const candleRange = Math.max(1e-9, c.high - c.low);
+    const closeStrengthFromLow = (c.close - c.low) / candleRange;
+    const closeStrengthFromHigh = (c.high - c.close) / candleRange;
+
+    const buyBounceConfirmed =
+      !requireReversal ||
+      c.close > c.open ||
+      ind.rsi > prevInd.rsi + 0.25 ||
+      closeStrengthFromLow >= 0.55;
+
+    const sellBounceConfirmed =
+      !requireReversal ||
+      c.close < c.open ||
+      ind.rsi < prevInd.rsi - 0.25 ||
+      closeStrengthFromHigh >= 0.55;
+
+    const trendAtBar = get4hTrendAtTimestamp(
+      options?.trend4hTimeline,
+      c.timestamp,
+      options?.latestTrend4h
+    );
+
+    let signalType: 'OVERSOLD_BUY' | 'OVERBOUGHT_SELL' | null = null;
+
+    if (
+      buyArmedBar !== null &&
+      !buyNeedsReset &&
+      i >= buyCooldownUntil &&
+      buyBounceConfirmed &&
+      (!use4hTrendFilter || isSignalAllowedBy4hTrend('LONG', trendAtBar))
+    ) {
+      signalType = 'OVERSOLD_BUY';
+      buyArmedBar = null;
+      buyCooldownUntil = i + cooldownBars;
+      buyNeedsReset = true;
+      sellNeedsReset = false;
+    } else if (
+      sellArmedBar !== null &&
+      !sellNeedsReset &&
+      i >= sellCooldownUntil &&
+      sellBounceConfirmed &&
+      (!use4hTrendFilter || isSignalAllowedBy4hTrend('SHORT', trendAtBar))
+    ) {
+      signalType = 'OVERBOUGHT_SELL';
+      sellArmedBar = null;
+      sellCooldownUntil = i + cooldownBars;
+      sellNeedsReset = true;
+      buyNeedsReset = false;
+    }
+
+    if (signalType) {
+      const volumeRatio = computeVolumeRatio(candles, i, 20);
+      const confluence = computeConfluenceScore({
+        direction: signalType === 'OVERSOLD_BUY' ? 'LONG' : 'SHORT',
+        trend4h: trendAtBar,
+        volumeRatio,
+        bbWidth: ind.bbWidth,
+        minBbWidth,
+      });
+
       signals.push({
-        id: `${symbol}-${timeframe}-${c.timestamp}-${status.activeSignal}`,
+        id: `${symbol}-${timeframe}-${c.timestamp}-${signalType}`,
         strategyName: 'RSI+BB',
         symbol,
         baseAsset: asset.baseAsset,
         timestamp: c.timestamp,
         candleTimestamp: c.timestamp,
-        type: status.activeSignal,
+        type: signalType,
         price: c.close,
         rsiValue: ind.rsi,
         bbUpper: ind.bbUpper,
         bbLower: ind.bbLower,
         percentB: ind.bbPercentB,
+        confluenceScore: confluence.score,
+        confluenceReasons: confluence.reasons,
+        trend4h: confluence.trend4hDirection,
+        volumeRatio,
+        bbWidth: ind.bbWidth,
         timeframe,
         telegramSent: false,
       });
@@ -108,6 +237,18 @@ export function detectRsiBbSignals(
   }
 
   return signals;
+}
+
+export function formatConfluenceBadge(score?: 1 | 2 | 3): string {
+  if (score === 3) return '🔥🔥🔥 3/3 (Сильный)';
+  if (score === 2) return '⚡⚡ 2/3 (Средний)';
+  return '⚪ 1/3 (Базовый)';
+}
+
+function formatTrend4hLine(trend4h?: 'BULLISH' | 'BEARISH' | 'NEUTRAL'): string {
+  if (trend4h === 'BULLISH') return '🟢 4h EMA200: Бычий тренд';
+  if (trend4h === 'BEARISH') return '🔴 4h EMA200: Медвежий тренд';
+  return '⚪ 4h EMA200: Нейтрально';
 }
 
 export function formatSignalTelegramMessage(
@@ -119,17 +260,46 @@ export function formatSignalTelegramMessage(
   const dateStr = new Date(signal.candleTimestamp).toLocaleString('ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     day: '2-digit',
     month: '2-digit',
   });
 
+  if (signal.type === 'BREAKEVEN') {
+    const isShort =
+      signal.entryPrice && signal.targetPrice ? signal.targetPrice < signal.entryPrice : false;
+    const dirLabel = isShort ? 'SHORT' : 'LONG';
+    const bePrice = signal.entryPrice || signal.price;
+    return [
+      `🛡 <b>БЕЗУБЫТОК (+50% до TP) — ${signal.baseAsset}/USDT ${dirLabel}</b>`,
+      '',
+      `${signal.baseAsset} ${dirLabel} прошёл полпути к цели TP — <b>можно перенести Stop Loss в безубыток</b> (<code>$${formatCryptoPrice(bePrice, signal.symbol)}</code>).`,
+      '',
+      `💰 <b>Текущая цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
+      signal.targetPrice
+        ? `🎯 <b>Цель TP:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        : '',
+      `⏱ <b>Таймфрейм:</b> ${signal.timeframe} (${exchange.toUpperCase()})`,
+      `🕒 <i>Свеча: ${dateStr}</i>`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  const scoreLine = `💎 <b>Сила сигнала:</b> ${formatConfluenceBadge(signal.confluenceScore)}`;
+  const trendLine = `🧭 ${formatTrend4hLine(signal.trend4h)}`;
+  const volLine =
+    signal.volumeRatio !== undefined
+      ? `📊 <b>Объем / BBW:</b> ×${signal.volumeRatio.toFixed(1)} от ср.20${
+          signal.bbWidth !== undefined ? ` · Ширина BB ${signal.bbWidth.toFixed(1)}%` : ''
+        }`
+      : '';
+
   if (signal.strategyName === 'Bj Bot') {
     const titleMap: Record<string, string> = {
-      LONG: `🔵 <b>BJ BOT (3Commas) ${signal.baseAsset}/USDT — LONG (Вход в Лонг)</b>`,
-      SHORT: `🟠 <b>BJ BOT (3Commas) ${signal.baseAsset}/USDT — SHORT (Вход в Шорт)</b>`,
-      'L EXIT': `🟣 <b>BJ BOT (3Commas) ${signal.baseAsset}/USDT — L EXIT (Выход из Лонга)</b>`,
-      'S EXIT': `🟡 <b>BJ BOT (3Commas) ${signal.baseAsset}/USDT — S EXIT (Выход из Шорта)</b>`,
+      LONG: `🔵 <b>BJ BOT · ${signal.baseAsset}/USDT — LONG</b>`,
+      SHORT: `🟠 <b>BJ BOT · ${signal.baseAsset}/USDT — SHORT</b>`,
+      'L EXIT': `🟣 <b>BJ BOT · ${signal.baseAsset}/USDT — L EXIT (Закрытие LONG)</b>`,
+      'S EXIT': `🟡 <b>BJ BOT · ${signal.baseAsset}/USDT — S EXIT (Закрытие SHORT)</b>`,
     };
     const header = titleMap[signal.type] || `<b>BJ BOT ${signal.baseAsset}/USDT — ${signal.type}</b>`;
 
@@ -139,18 +309,21 @@ export function formatSignalTelegramMessage(
 
     return [
       header,
+      scoreLine,
       '',
-      `📊 <b>Пара:</b> ${signal.baseAsset}/USDT (${exchange.toUpperCase()})`,
-      `⏱ <b>Таймфрейм:</b> ${signal.timeframe}`,
+      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
       `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
       signal.stopPrice
-        ? `🛑 <b>Стоп-лосс (ATR):</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}`
+        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}`
         : '',
       signal.targetPrice
-        ? `🎯 <b>Тейк-профит (R:R):</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
         : '',
-      `📈 <b>Настройки:</b> ${maInfo}`,
-      `🕒 <i>Время свечи: ${dateStr}</i>`,
+      '',
+      trendLine,
+      volLine,
+      `⚙️ <b>Параметры:</b> ${maInfo}`,
+      `🕒 <i>Свеча: ${dateStr}</i>`,
     ]
       .filter(Boolean)
       .join('\n');
@@ -158,27 +331,41 @@ export function formatSignalTelegramMessage(
 
   const isLong = signal.type === 'OVERSOLD_BUY';
   const header = isLong
-    ? `🟢 <b>СИГНАЛ ${signal.baseAsset}/USDT: ПЕРЕПРОДАННОСТЬ (RSI + BB) — BUY</b>`
-    : `🔴 <b>СИГНАЛ ${signal.baseAsset}/USDT: ПЕРЕКУПЛЕННОСТЬ (RSI + BB) — SELL</b>`;
+    ? `🟢 <b>RSI + BB · ${signal.baseAsset}/USDT — BUY (Отскок)</b>`
+    : `🔴 <b>RSI + BB · ${signal.baseAsset}/USDT — SELL (Разворот)</b>`;
 
   return [
     header,
+    scoreLine,
     '',
-    `📊 <b>Пара:</b> ${signal.baseAsset}/USDT (${exchange.toUpperCase()})`,
-    `⏱ <b>Таймфрейм:</b> ${signal.timeframe}`,
-    `💰 <b>Цена ${signal.baseAsset}:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
-    `• <b>RSI (${config.rsiPeriod}):</b> ${signal.rsiValue.toFixed(2)}`,
-    `• <b>Верхняя BB:</b> $${formatCryptoPrice(signal.bbUpper, signal.symbol)}`,
-    `• <b>Нижняя BB:</b> $${formatCryptoPrice(signal.bbLower, signal.symbol)}`,
-    `• <b>%B:</b> ${(signal.percentB * 100).toFixed(1)}%`,
-    `🕒 <i>Время свечи: ${dateStr}</i>`,
-  ].join('\n');
+    `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
+    `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
+    `• <b>RSI (${config.rsiPeriod}):</b> ${signal.rsiValue.toFixed(1)} | <b>%B:</b> ${(
+      signal.percentB * 100
+    ).toFixed(0)}%`,
+    `• <b>Границы BB:</b> $${formatCryptoPrice(signal.bbLower, signal.symbol)} — $${formatCryptoPrice(
+      signal.bbUpper,
+      signal.symbol
+    )}`,
+    '',
+    trendLine,
+    volLine,
+    `🕒 <i>Свеча: ${dateStr}</i>`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
-export const TG_STATS_BUTTON_TEXT = '📊 Статистика сделок (30 мин)';
+export const TG_STATS_BUTTON_TEXT = '📊 Статистика (30м)';
+export const TG_TOP_PAIRS_BUTTON_TEXT = '🏆 Топ связок (30м)';
+export const TG_MARKET_STATUS_BUTTON_TEXT = '📡 Статус рынка (4h)';
+export const TG_SETTINGS_BUTTON_TEXT = '⚙️ Фильтр сигналов';
 
 export const DEFAULT_TG_REPLY_KEYBOARD = {
-  keyboard: [[{ text: TG_STATS_BUTTON_TEXT }]],
+  keyboard: [
+    [{ text: TG_STATS_BUTTON_TEXT }, { text: TG_TOP_PAIRS_BUTTON_TEXT }],
+    [{ text: TG_MARKET_STATUS_BUTTON_TEXT }, { text: TG_SETTINGS_BUTTON_TEXT }],
+  ],
   resize_keyboard: true,
   is_persistent: true,
 };
@@ -196,6 +383,16 @@ export function buildStatsCoinsInlineKeyboard() {
     {
       text: '📋 Сводка по всем валютам (30м)',
       callback_data: 'stat_all:summary',
+    },
+  ]);
+  rows.push([
+    {
+      text: '🏆 Топ связок по Win Rate',
+      callback_data: 'tg_top:list',
+    },
+    {
+      text: '📡 Статус 4h',
+      callback_data: 'tg_market:status',
     },
   ]);
   return { inline_keyboard: rows };
@@ -268,12 +465,85 @@ export function buildStatsResultInlineKeyboard(
           callback_data: `stat_show:${symbol}:${activeMode}`,
         },
         {
-          text: '🪙 Выбрать другую валюту',
+          text: '🪙 Другая валюта',
           callback_data: 'stat_menu:coins',
         },
       ],
     ],
   };
+}
+
+export function buildFilterSettingsInlineKeyboard(tgConfig: TelegramConfig) {
+  const minScore = tgConfig.minConfluenceScore ?? 1;
+  const notifyBe = tgConfig.notifyBreakeven ?? true;
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: `${minScore === 1 ? '✅ ' : ''}⚪ Все (1/3+)`,
+          callback_data: 'tg_filter:score:1',
+        },
+        {
+          text: `${minScore === 2 ? '✅ ' : ''}⚡ От 2/3`,
+          callback_data: 'tg_filter:score:2',
+        },
+        {
+          text: `${minScore === 3 ? '✅ ' : ''}🔥 Только 3/3`,
+          callback_data: 'tg_filter:score:3',
+        },
+      ],
+      [
+        {
+          text: `${notifyBe ? '🛡 Безубыток +50%: ВКЛ' : '🛡 Безубыток +50%: ВЫКЛ'}`,
+          callback_data: 'tg_filter:toggle_be',
+        },
+      ],
+      [
+        {
+          text: '📊 Открыть статистику',
+          callback_data: 'stat_menu:coins',
+        },
+      ],
+    ],
+  };
+}
+
+function formatFilterSettingsMessage(
+  tgConfig: TelegramConfig,
+  strategyConfig: RsiBbStrategyConfig,
+  bjConfig: BjBotConfig
+): string {
+  const minScore = tgConfig.minConfluenceScore ?? 1;
+  const scoreDesc =
+    minScore === 3
+      ? '🔥🔥🔥 Только сильные (3/3)'
+      : minScore === 2
+      ? '⚡⚡ Средние и сильные (2/3 и 3/3)'
+      : '⚪ Все сигналы (1/3, 2/3, 3/3)';
+
+  return [
+    '⚙️ <b>НАСТРОЙКИ ФИЛЬТРОВ И УВЕДОМЛЕНИЙ</b>',
+    '',
+    `🎯 <b>Порог отправки в Telegram:</b> ${scoreDesc}`,
+    `🛡 <b>Алерты безубытка (+50% до TP):</b> ${
+      (tgConfig.notifyBreakeven ?? true) ? '✅ Включены' : '❌ Выключены'
+    }`,
+    '',
+    '🧠 <b>Активные фильтры стратегий:</b>',
+    `• 4h EMA 200 (RSI+BB / Bj Bot): ${
+      (strategyConfig.use4hTrendFilter ?? true) || (bjConfig.use4hTrendFilter ?? true)
+        ? '✅ Вкл'
+        : '❌ Выкл'
+    }`,
+    `• Разворотная свеча RSI+BB (без спама): ${
+      (strategyConfig.requireReversalCandle ?? true) ? '✅ Вкл' : '❌ Выкл'
+    }`,
+    `• Анти-флэт Bj Bot (BBW ≥ ${(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%): ${
+      (bjConfig.useFlatFilter ?? true) ? '✅ Вкл' : '❌ Выкл'
+    }`,
+    '',
+    '<i>Нажмите кнопку ниже, чтобы изменить фильтр мгновенно:</i>',
+  ].join('\n');
 }
 
 export async function sendTelegramAlert(
@@ -327,14 +597,12 @@ export async function sendTelegramAlert(
 export async function sendTelegramStatsInteractiveMenu(
   config: TelegramConfig
 ): Promise<{ ok: boolean; error?: string }> {
-  // 1. Сначала закрепляем нижнюю кнопку Reply Keyboard, чтобы она всегда была под рукой в боте
   await sendTelegramAlert(
     config,
-    '👇 Кнопка <b>«📊 Статистика сделок (30 мин)»</b> активирована в нижней панели вашего Telegram-бота.',
+    '🧭 <b>Панель управления QuantCrypto обновлена:</b> внизу закреплены 4 быстрые кнопки (Статистика, Топ связок, Статус 4h, Фильтр).',
     DEFAULT_TG_REPLY_KEYBOARD
   );
 
-  // 2. Отправляем интерактивное меню выбора валюты и стратегии
   const menuText = [
     '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
     '',
@@ -398,6 +666,15 @@ async function editOrSendTelegramMessage(
   }
 }
 
+export interface MarketOverview4hRow {
+  symbol: CryptoSymbol;
+  baseAsset: string;
+  price: number;
+  trend4h: Trend4hInfo;
+  rsi30m: number;
+  bbWidth30m: number;
+}
+
 export interface TelegramStatsProvider {
   getPairStats30m: (
     symbol: CryptoSymbol
@@ -405,6 +682,169 @@ export interface TelegramStatsProvider {
   getAllSummary30m: () => Promise<
     { rsi: StrategyPairStats; bj: StrategyPairStats }[]
   >;
+  getMarketOverview4h?: () => Promise<MarketOverview4hRow[]>;
+  getTelegramConfig?: () => TelegramConfig;
+  updateTelegramConfig?: (patch: Partial<TelegramConfig>) => Promise<TelegramConfig>;
+}
+
+async function computeFallbackMarketOverview4h(
+  exchange: ExchangeId,
+  strategyConfig: RsiBbStrategyConfig
+): Promise<MarketOverview4hRow[]> {
+  return Promise.all(
+    CRYPTO_ASSETS.map(async (asset) => {
+      const [m4h, m30] = await Promise.all([
+        fetchHistoricalCandles(exchange, '4h', 250, asset.symbol),
+        fetchHistoricalCandles(exchange, '30m', 60, asset.symbol),
+      ]);
+      const trend4h = computeLatest4hTrendInfo(asset.symbol, m4h.candles);
+      const inds = computeIndicators(m30.candles, {
+        rsiPeriod: strategyConfig.rsiPeriod,
+        bbPeriod: strategyConfig.bbPeriod,
+        bbStdDev: strategyConfig.bbStdDev,
+      }).indicators;
+      const lastInd = inds[inds.length - 1];
+      const lastPrice =
+        m30.candles[m30.candles.length - 1]?.close || trend4h.price || asset.seedPrice;
+      return {
+        symbol: asset.symbol,
+        baseAsset: asset.baseAsset,
+        price: lastPrice,
+        trend4h,
+        rsi30m: lastInd?.rsi ?? 50,
+        bbWidth30m: lastInd?.bbWidth ?? 3.5,
+      };
+    })
+  );
+}
+
+async function buildTopPairsMessageAndKeyboard(
+  exchange: ExchangeId,
+  strategyConfig: RsiBbStrategyConfig,
+  bjConfig: BjBotConfig,
+  statsProvider?: TelegramStatsProvider
+): Promise<{ html: string; keyboard: Record<string, unknown> }> {
+  const rows = statsProvider
+    ? await statsProvider.getAllSummary30m()
+    : await Promise.all(
+        CRYPTO_ASSETS.map(async (asset) => {
+          const market30m = await fetchHistoricalCandles(exchange, '30m', 180, asset.symbol);
+          return {
+            rsi: evaluateStrategyStats(
+              market30m.candles,
+              strategyConfig,
+              bjConfig,
+              asset.symbol,
+              'rsi_bb',
+              '30m'
+            ),
+            bj: evaluateStrategyStats(
+              market30m.candles,
+              strategyConfig,
+              bjConfig,
+              asset.symbol,
+              'bj_bot',
+              '30m'
+            ),
+          };
+        })
+      );
+
+  const flattened: StrategyPairStats[] = [];
+  for (const r of rows) {
+    if (r.rsi.totalTrades > 0) flattened.push(r.rsi);
+    if (r.bj.totalTrades > 0) flattened.push(r.bj);
+  }
+
+  flattened.sort((a, b) => {
+    if (Math.abs(b.winRate - a.winRate) > 0.5) return b.winRate - a.winRate;
+    return b.totalPnlPercent - a.totalPnlPercent;
+  });
+
+  const top5 = flattened.slice(0, 6);
+  const lines =
+    top5.length > 0
+      ? top5.map((st, idx) => {
+          const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+          const stratShort = st.strategyId === 'rsi_bb' ? 'RSI+BB' : 'Bj Bot';
+          const pnlSign = st.totalPnlPercent >= 0 ? '+' : '';
+          return `${medal} <b>${st.baseAsset}/USDT · ${stratShort}</b>\n   Win Rate: <b>${st.winRate.toFixed(
+            1
+          )}%</b> (${st.winningTrades}W/${st.losingTrades}L) · PnL: <b>${pnlSign}${st.totalPnlPercent.toFixed(
+            2
+          )}%</b> · PF ${st.profitFactor.toFixed(2)}`;
+        })
+      : ['ℹ️ Пока нет завершенных 30m сделок для построения рейтинга.'];
+
+  const html = [
+    '🏆 <b>ТОП СВЯЗОК ПО УСПЕШНОСТИ (30 МИН)</b>',
+    '',
+    ...lines,
+    '',
+    '👇 <i>Откройте детальный разбор лидеров кнопками ниже:</i>',
+  ].join('\n');
+
+  const quickButtons = top5.slice(0, 4).map((st) => ({
+    text: `${st.baseAsset} (${st.strategyId === 'rsi_bb' ? 'RSI+BB' : 'BjBot'})`,
+    callback_data: `stat_show:${st.symbol}:${st.strategyId}`,
+  }));
+
+  const inlineRows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < quickButtons.length; i += 2) {
+    inlineRows.push(quickButtons.slice(i, i + 2));
+  }
+  inlineRows.push([
+    { text: '🔄 Обновить рейтинг', callback_data: 'tg_top:list' },
+    { text: '🪙 Все валюты', callback_data: 'stat_menu:coins' },
+  ]);
+
+  return { html, keyboard: { inline_keyboard: inlineRows } };
+}
+
+async function buildMarketOverviewMessageAndKeyboard(
+  exchange: ExchangeId,
+  strategyConfig: RsiBbStrategyConfig,
+  bjConfig: BjBotConfig,
+  statsProvider?: TelegramStatsProvider
+): Promise<{ html: string; keyboard: Record<string, unknown> }> {
+  const rows = statsProvider?.getMarketOverview4h
+    ? await statsProvider.getMarketOverview4h()
+    : await computeFallbackMarketOverview4h(exchange, strategyConfig);
+
+  const minBb = bjConfig.minBbWidth ?? 1.5;
+
+  const lines = rows.map((row) => {
+    const tIcon =
+      row.trend4h.trend === 'BULLISH' ? '🟢' : row.trend4h.trend === 'BEARISH' ? '🔴' : '⚪';
+    const distSign = row.trend4h.distancePercent >= 0 ? '+' : '';
+    const flatLabel = row.bbWidth30m < minBb ? '💤 Флэт' : `BBW ${row.bbWidth30m.toFixed(1)}%`;
+    return `${tIcon} <b>${row.baseAsset}/USDT</b> · $${formatCryptoPrice(
+      row.price,
+      row.symbol
+    )}\n   4h EMA200: <b>${distSign}${row.trend4h.distancePercent.toFixed(
+      1
+    )}%</b> · RSI(30м): <b>${row.rsi30m.toFixed(0)}</b> · ${flatLabel}`;
+  });
+
+  const html = [
+    '📡 <b>СТАТУС РЫНКА (4h EMA 200 + 30м RSI)</b>',
+    '',
+    ...lines,
+    '',
+    `<i>Порог флэта для Bj Bot: BBW &lt; ${minBb.toFixed(1)}%</i>`,
+  ].join('\n');
+
+  return {
+    html,
+    keyboard: {
+      inline_keyboard: [
+        [
+          { text: '🔄 Обновить срез 4h', callback_data: 'tg_market:status' },
+          { text: '🏆 Топ связок', callback_data: 'tg_top:list' },
+        ],
+      ],
+    },
+  };
 }
 
 export async function processTelegramBotUpdate(
@@ -418,14 +858,17 @@ export async function processTelegramBotUpdate(
   const token = botToken.trim();
   if (!token) return;
 
-  // 1. Обработка нажатий на Inline-кнопки (выбор валюты и стратегии)
+  const currentTgConfig: TelegramConfig = statsProvider?.getTelegramConfig
+    ? statsProvider.getTelegramConfig()
+    : { botToken: token, chatId: '', autoNotify: true, minConfluenceScore: 1, notifyBreakeven: true };
+
+  // 1. Обработка нажатий на Inline-кнопки
   if (update.callback_query) {
     const cq = update.callback_query;
     const data = String(cq.data || '');
     const chatId = cq.message?.chat?.id;
     const messageId = cq.message?.message_id;
 
-    // Убираем индикатор загрузки на кнопке в Telegram
     fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -457,7 +900,7 @@ export async function processTelegramBotUpdate(
         `🪙 <b>Выбрана валюта: ${asset.baseAsset}/USDT (${asset.name})</b>`,
         `⏱ <b>Интервал расчета:</b> 30 мин`,
         '',
-        'Теперь выберите стратегию для просмотра статистики успешности сделок:',
+        'Выберите стратегию для просмотра статистики:',
       ].join('\n');
       await editOrSendTelegramMessage(
         token,
@@ -502,14 +945,12 @@ export async function processTelegramBotUpdate(
         );
       }
 
-      let reportHtml = '';
-      if (mode === 'rsi_bb') {
-        reportHtml = formatTelegramStrategyStatsReport(rsiStats);
-      } else if (mode === 'bj_bot') {
-        reportHtml = formatTelegramStrategyStatsReport(bjStats);
-      } else {
-        reportHtml = formatTelegramBothStrategiesReport(rsiStats, bjStats);
-      }
+      const reportHtml =
+        mode === 'rsi_bb'
+          ? formatTelegramStrategyStatsReport(rsiStats)
+          : mode === 'bj_bot'
+          ? formatTelegramStrategyStatsReport(bjStats)
+          : formatTelegramBothStrategiesReport(rsiStats, bjStats);
 
       await editOrSendTelegramMessage(
         token,
@@ -562,29 +1003,144 @@ export async function processTelegramBotUpdate(
       );
       return;
     }
+
+    if (data === 'tg_top:list') {
+      const { html, keyboard } = await buildTopPairsMessageAndKeyboard(
+        exchange,
+        strategyConfig,
+        bjConfig,
+        statsProvider
+      );
+      await editOrSendTelegramMessage(token, chatId, messageId, html, keyboard);
+      return;
+    }
+
+    if (data === 'tg_market:status') {
+      const { html, keyboard } = await buildMarketOverviewMessageAndKeyboard(
+        exchange,
+        strategyConfig,
+        bjConfig,
+        statsProvider
+      );
+      await editOrSendTelegramMessage(token, chatId, messageId, html, keyboard);
+      return;
+    }
+
+    if (data.startsWith('tg_filter:')) {
+      let updatedCfg = { ...currentTgConfig };
+      if (data.startsWith('tg_filter:score:')) {
+        const val = Number(data.replace('tg_filter:score:', '')) as 1 | 2 | 3;
+        if (val === 1 || val === 2 || val === 3) {
+          updatedCfg = statsProvider?.updateTelegramConfig
+            ? await statsProvider.updateTelegramConfig({ minConfluenceScore: val })
+            : { ...updatedCfg, minConfluenceScore: val };
+        }
+      } else if (data === 'tg_filter:toggle_be') {
+        const nextBe = !(currentTgConfig.notifyBreakeven ?? true);
+        updatedCfg = statsProvider?.updateTelegramConfig
+          ? await statsProvider.updateTelegramConfig({ notifyBreakeven: nextBe })
+          : { ...updatedCfg, notifyBreakeven: nextBe };
+      }
+
+      const html = formatFilterSettingsMessage(updatedCfg, strategyConfig, bjConfig);
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        messageId,
+        html,
+        buildFilterSettingsInlineKeyboard(updatedCfg)
+      );
+      return;
+    }
   }
 
-  // 2. Обработка текстовых команд и нажатия на нижнюю кнопку «📊 Статистика сделок (30 мин)»
+  // 2. Обработка текстовых команд и кнопок нижней панели 2×2
   if (update.message && update.message.chat?.id) {
     const chatId = update.message.chat.id;
     const text = String(update.message.text || '').trim();
+    const lower = text.toLowerCase();
+
+    if (text.startsWith('/start') || text.startsWith('/menu') || text.startsWith('/help')) {
+      const welcome = [
+        '👋 <b>Добро пожаловать в QuantCrypto Бот!</b>',
+        '',
+        'Доступны быстрые команды в нижней панели:',
+        '• <b>📊 Статистика (30м)</b> — Win Rate и сделки по каждой монете',
+        '• <b>🏆 Топ связок (30м)</b> — лучшие пары и стратегии',
+        '• <b>📡 Статус рынка (4h)</b> — глобальный тренд 4h EMA 200, RSI и флэт',
+        '• <b>⚙️ Фильтр сигналов</b> — порог силы (1/3, 2/3, 3/3) и безубыток',
+      ].join('\n');
+
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        undefined,
+        welcome,
+        DEFAULT_TG_REPLY_KEYBOARD
+      );
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        undefined,
+        '👇 Выберите криптовалюту для просмотра статистики 30м:',
+        buildStatsCoinsInlineKeyboard()
+      );
+      return;
+    }
+
+    if (
+      text === TG_TOP_PAIRS_BUTTON_TEXT ||
+      text.startsWith('/top') ||
+      lower.includes('топ связ')
+    ) {
+      const { html, keyboard } = await buildTopPairsMessageAndKeyboard(
+        exchange,
+        strategyConfig,
+        bjConfig,
+        statsProvider
+      );
+      await editOrSendTelegramMessage(token, chatId, undefined, html, keyboard);
+      return;
+    }
+
+    if (
+      text === TG_MARKET_STATUS_BUTTON_TEXT ||
+      text.startsWith('/status') ||
+      lower.includes('статус рынка')
+    ) {
+      const { html, keyboard } = await buildMarketOverviewMessageAndKeyboard(
+        exchange,
+        strategyConfig,
+        bjConfig,
+        statsProvider
+      );
+      await editOrSendTelegramMessage(token, chatId, undefined, html, keyboard);
+      return;
+    }
+
+    if (
+      text === TG_SETTINGS_BUTTON_TEXT ||
+      text.startsWith('/filter') ||
+      text.startsWith('/settings') ||
+      lower.includes('фильтр сигнал')
+    ) {
+      const html = formatFilterSettingsMessage(currentTgConfig, strategyConfig, bjConfig);
+      await editOrSendTelegramMessage(
+        token,
+        chatId,
+        undefined,
+        html,
+        buildFilterSettingsInlineKeyboard(currentTgConfig)
+      );
+      return;
+    }
 
     if (
       text === TG_STATS_BUTTON_TEXT ||
-      text.startsWith('/start') ||
+      text === '📊 Статистика сделок (30 мин)' ||
       text.startsWith('/stats') ||
-      text.toLowerCase().includes('статистик')
+      lower.includes('статистик')
     ) {
-      if (text.startsWith('/start')) {
-        await editOrSendTelegramMessage(
-          token,
-          chatId,
-          undefined,
-          '👋 <b>Добро пожаловать в QuantCrypto Терминал!</b>\nКнопка <b>«📊 Статистика сделок (30 мин)»</b> закреплена внизу экрана.',
-          DEFAULT_TG_REPLY_KEYBOARD
-        );
-      }
-
       const menuText = [
         '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
         '',
@@ -601,5 +1157,3 @@ export async function processTelegramBotUpdate(
     }
   }
 }
-
-

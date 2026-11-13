@@ -226,10 +226,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     };
   }, [clampedVisibleCount, maxPanOffset, isAutoScale]);
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
+  const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
+  wheelHandlerRef.current = (e: WheelEvent) => {
     if (!svgContainerRef.current) return;
+    e.preventDefault();
     const rect = svgContainerRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const relX = e.clientX - rect.left;
     const svgX = (relX / rect.width) * 1000;
 
@@ -251,6 +253,17 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
       handleZoom(e.deltaY);
     }
   };
+
+  const hasVisibleCandles = visibleCandles.length > 0;
+  useEffect(() => {
+    const el = svgContainerRef.current;
+    if (!el || !hasVisibleCandles) return;
+    const listener = (e: WheelEvent) => wheelHandlerRef.current(e);
+    el.addEventListener('wheel', listener, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', listener);
+    };
+  }, [hasVisibleCandles]);
 
   // SVG dimensions
   const width = 1000;
@@ -358,7 +371,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
 
   if (visibleCandles.length === 0) {
     return (
-      <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl h-[620px] flex items-center justify-center text-slate-400 text-sm">
+      <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl h-[360px] sm:h-[520px] flex items-center justify-center text-slate-400 text-sm">
         Загрузка графика {symbol}...
       </div>
     );
@@ -531,10 +544,10 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     1;
 
   return (
-    <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl shadow-[0_20px_50px_-15px_rgba(0,240,255,0.12)] flex flex-col h-full relative">
+    <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl shadow-[0_20px_50px_-15px_rgba(0,240,255,0.12)] flex flex-col relative">
       {/* Верхняя панель: Выпадающее меню криптовалюты, Интервалы, Биржа и выпадающее меню «Индикаторы» */}
-      <div className="px-4 py-3 border-b border-cyan-400/15 flex flex-wrap items-center justify-between gap-2.5 bg-[#070e22]/90 rounded-t-2xl relative z-30">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-cyan-400/15 flex flex-wrap items-center justify-between gap-2 bg-[#070e22]/90 rounded-t-2xl relative z-30">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 max-w-full">
           {/* Выпадающее меню выбора криптовалюты по клику */}
           <div className="relative">
             <button
@@ -542,7 +555,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 setIsCryptoMenuOpen((prev) => !prev);
                 setIsIndicatorsMenuOpen(false);
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-white text-slate-950 font-bold text-xs flex items-center gap-2 shadow-sm hover:bg-cyan-50 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-white text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-cyan-50 transition-colors whitespace-nowrap shrink-0"
             >
               <span>{activeAsset.baseAsset}/USDT</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
@@ -577,12 +590,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </div>
 
           {/* Таймфреймы */}
-          <div className="flex items-center gap-0.5 bg-[#0d1936] border border-cyan-400/20 rounded-xl p-1">
+          <div className="flex items-center gap-0.5 bg-[#0d1936] border border-cyan-400/20 rounded-xl p-1 overflow-x-auto max-w-full">
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf.id}
                 onClick={() => onTimeframeChange(tf.id)}
-                className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap shrink-0 ${
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold rounded-lg transition-all whitespace-nowrap shrink-0 ${
                   timeframe === tf.id
                     ? 'bg-cyan-400 text-slate-950 shadow-[0_0_16px_rgba(34,211,238,0.45)]'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -599,7 +612,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               <button
                 key={ex.id}
                 onClick={() => onExchangeChange(ex.id)}
-                className={`px-2 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-2 py-1 sm:py-1.5 text-[11px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                   exchange === ex.id
                     ? 'bg-white/15 text-white font-semibold'
                     : 'text-slate-400 hover:text-white'
@@ -612,13 +625,13 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         </div>
 
         {/* Выпадающее меню «Индикаторы» (компактное, без обрезания) */}
-        <div className="relative">
+        <div className="relative ml-auto">
           <button
             onClick={() => {
               setIsIndicatorsMenuOpen((prev) => !prev);
               setIsCryptoMenuOpen(false);
             }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
               isIndicatorsMenuOpen
                 ? 'bg-cyan-400 text-slate-950 border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.4)]'
                 : 'bg-[#0d1936] border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/10'
@@ -630,7 +643,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </button>
 
           {isIndicatorsMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-80 bg-white text-slate-900 rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.65)] border border-slate-200 p-3 z-50 space-y-2 max-h-[420px] overflow-y-auto">
+            <div className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] bg-white text-slate-900 rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.65)] border border-slate-200 p-3 z-50 space-y-2 max-h-[420px] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
                 <span className="text-xs font-bold text-slate-900">
                   Индикаторы
@@ -847,6 +860,63 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           <span>Реверс (Flip)</span>
                         </label>
                       </div>
+
+                      <div className="pt-2 border-t border-slate-200/70 space-y-2">
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Фильтр тренда 4h EMA 200</span>
+                          <input
+                            type="checkbox"
+                            checked={bjConfig.use4hTrendFilter ?? true}
+                            onChange={(e) =>
+                              onUpdateBjConfig({
+                                ...bjConfig,
+                                use4hTrendFilter: e.target.checked,
+                              })
+                            }
+                            className="accent-cyan-500 rounded"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Анти-флэт фильтр (BBW)</span>
+                          <input
+                            type="checkbox"
+                            checked={bjConfig.useFlatFilter ?? true}
+                            onChange={(e) =>
+                              onUpdateBjConfig({
+                                ...bjConfig,
+                                useFlatFilter: e.target.checked,
+                              })
+                            }
+                            className="accent-cyan-500 rounded"
+                          />
+                        </label>
+
+                        {(bjConfig.useFlatFilter ?? true) && (
+                          <div>
+                            <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                              <span>Мин. ширина полос BBW</span>
+                              <span className="font-mono font-bold">
+                                {(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0.5}
+                              max={4.0}
+                              step={0.1}
+                              value={bjConfig.minBbWidth ?? 1.5}
+                              onChange={(e) =>
+                                onUpdateBjConfig({
+                                  ...bjConfig,
+                                  minBbWidth: Number(e.target.value),
+                                })
+                              }
+                              className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1050,6 +1120,61 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
                         />
                       </div>
+
+                      <div className="pt-2 border-t border-slate-200/70 space-y-2">
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Разворотная свеча (анти-спам)</span>
+                          <input
+                            type="checkbox"
+                            checked={strategyConfig.requireReversalCandle ?? true}
+                            onChange={(e) =>
+                              onUpdateStrategy({
+                                ...strategyConfig,
+                                requireReversalCandle: e.target.checked,
+                              })
+                            }
+                            className="accent-cyan-500 rounded"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Фильтр тренда 4h EMA 200</span>
+                          <input
+                            type="checkbox"
+                            checked={strategyConfig.use4hTrendFilter ?? false}
+                            onChange={(e) =>
+                              onUpdateStrategy({
+                                ...strategyConfig,
+                                use4hTrendFilter: e.target.checked,
+                              })
+                            }
+                            className="accent-cyan-500 rounded"
+                          />
+                        </label>
+
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                            <span>Пауза между входами (свечи)</span>
+                            <span className="font-mono font-bold">
+                              {strategyConfig.cooldownBars ?? 4}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={2}
+                            max={15}
+                            step={1}
+                            value={strategyConfig.cooldownBars ?? 4}
+                            onChange={(e) =>
+                              onUpdateStrategy({
+                                ...strategyConfig,
+                                cooldownBars: Number(e.target.value),
+                              })
+                            }
+                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1142,7 +1267,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
       </div>
 
       {/* Компактная строка значений свечи без лишних надписей */}
-      <div className="px-5 py-2 border-b border-white/5 flex flex-wrap items-center gap-3 bg-[#081024]/70 text-xs font-mono tabular-nums">
+      <div className="px-3 sm:px-5 py-2 border-b border-white/5 flex flex-wrap items-center gap-x-2.5 gap-y-1 bg-[#081024]/70 text-[11px] sm:text-xs font-mono tabular-nums">
         {hoveredCandle && hoveredInd && (
           <>
             <span className="text-cyan-300 font-bold">{activeAsset.baseAsset}/USDT</span>
@@ -1194,6 +1319,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   <span className="text-slate-500">·</span>
                   <span className={colorClass}>
                     {hs.strategyName}: {badgeLabel}
+                    {hs.confluenceScore ? ` [${hs.confluenceScore}/3]` : ''}
                   </span>
                 </React.Fragment>
               );
@@ -1202,10 +1328,9 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         )}
       </div>
 
-      {/* Интерактивный холст графика */}
+      {/* Интерактивный холст графика (строго по размеру SVG без пустой зоны снизу) */}
       <div
         ref={svgContainerRef}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={stopDragging}
@@ -1216,7 +1341,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={stopDragging}
-        className={`relative w-full flex-1 select-none bg-gradient-to-b from-[#070f24] via-[#060d1f] to-[#050a18] flex flex-col justify-between overflow-hidden ${
+        className={`relative w-full select-none bg-gradient-to-b from-[#070f24] via-[#060d1f] to-[#050a18] overflow-hidden touch-pan-y ${
           isHoveringPriceAxis
             ? 'cursor-ns-resize'
             : 'cursor-grab active:cursor-grabbing'
@@ -1224,7 +1349,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
       >
         <svg
           viewBox={`0 0 ${width} ${totalHeight}`}
-          className="w-full h-auto"
+          className="block w-full h-auto"
         >
           <defs>
             <linearGradient id="neonCyanBB" x1="0" y1="0" x2="0" y2="1">
@@ -1870,9 +1995,9 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
       </div>
 
       {/* НИЖНЯЯ ПАНЕЛЬ ПОД ГРАФИКОМ: Слева текущее время в реальном времени, справа кнопки приближения/отдаления и А / Л */}
-      <div className="px-4 py-2 border-t border-cyan-400/15 bg-[#070e22]/90 rounded-b-2xl flex items-center justify-between gap-3">
+      <div className="px-3 sm:px-4 py-2 border-t border-cyan-400/15 bg-[#070e22]/90 rounded-b-2xl flex items-center justify-between gap-2">
         {/* Текущее время */}
-        <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-slate-300 bg-[#0d1936] border border-cyan-400/20 rounded-xl px-3 py-1.5">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-mono tabular-nums text-slate-300 bg-[#0d1936] border border-cyan-400/20 rounded-xl px-2.5 sm:px-3 py-1.5">
           <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           <span className="text-white font-semibold">
             {currentTime.toLocaleTimeString('ru-RU', {
@@ -1881,8 +2006,8 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               second: '2-digit',
             })}
           </span>
-          <span className="text-slate-500">·</span>
-          <span className="text-slate-400">
+          <span className="text-slate-500 hidden sm:inline">·</span>
+          <span className="text-slate-400 hidden sm:inline">
             {currentTime.toLocaleDateString('ru-RU', {
               day: '2-digit',
               month: '2-digit',

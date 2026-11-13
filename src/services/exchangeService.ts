@@ -156,7 +156,8 @@ async function fetchCoinbaseCandles(
  */
 async function fetchKrakenCandles(
   symbol: CryptoSymbol,
-  timeframe: TimeframeId
+  timeframe: TimeframeId,
+  limit: number = 180
 ): Promise<Candle[]> {
   const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
   const interval = KRAKEN_INTERVALS[timeframe];
@@ -171,7 +172,7 @@ async function fetchKrakenCandles(
   const result = resultKeys.length > 0 ? data.result[resultKeys[0]] : null;
   if (!Array.isArray(result) || result.length === 0) throw new Error('Kraken empty result');
 
-  return result.slice(-180).map((item: any) => ({
+  return result.slice(-Math.max(180, limit)).map((item: any) => ({
     timestamp: Number(item[0]) * 1000,
     open: parseFloat(item[1]),
     high: parseFloat(item[2]),
@@ -195,13 +196,13 @@ export async function fetchHistoricalCandles(
   if (exchange === 'binance') {
     attempts.push({ id: 'binance', fn: () => fetchBinanceCandles(symbol, timeframe, limit) });
     attempts.push({ id: 'coinbase', fn: () => fetchCoinbaseCandles(symbol, timeframe) });
-    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe) });
+    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe, limit) });
   } else if (exchange === 'coinbase') {
     attempts.push({ id: 'coinbase', fn: () => fetchCoinbaseCandles(symbol, timeframe) });
     attempts.push({ id: 'binance', fn: () => fetchBinanceCandles(symbol, timeframe, limit) });
-    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe) });
+    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe, limit) });
   } else {
-    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe) });
+    attempts.push({ id: 'kraken', fn: () => fetchKrakenCandles(symbol, timeframe, limit) });
     attempts.push({ id: 'binance', fn: () => fetchBinanceCandles(symbol, timeframe, limit) });
     attempts.push({ id: 'coinbase', fn: () => fetchCoinbaseCandles(symbol, timeframe) });
   }
