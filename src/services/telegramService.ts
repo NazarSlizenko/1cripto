@@ -11,6 +11,7 @@ import {
   formatCryptoPrice,
   Indicators,
   RsiBbStrategyConfig,
+  StrategyPairStats,
   StrategySignalEvent,
   TelegramConfig,
   TimeframeId,
@@ -397,12 +398,22 @@ async function editOrSendTelegramMessage(
   }
 }
 
+export interface TelegramStatsProvider {
+  getPairStats30m: (
+    symbol: CryptoSymbol
+  ) => Promise<{ rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>;
+  getAllSummary30m: () => Promise<
+    { rsi: StrategyPairStats; bj: StrategyPairStats }[]
+  >;
+}
+
 export async function processTelegramBotUpdate(
   update: any,
   botToken: string,
   exchange: ExchangeId,
   strategyConfig: RsiBbStrategyConfig,
-  bjConfig: BjBotConfig
+  bjConfig: BjBotConfig,
+  statsProvider?: TelegramStatsProvider
 ): Promise<void> {
   const token = botToken.trim();
   if (!token) return;
@@ -464,47 +475,39 @@ export async function processTelegramBotUpdate(
       const mode = (parts[2] || 'both') as 'rsi_bb' | 'bj_bot' | 'both';
       const asset = CRYPTO_ASSETS.find((a) => a.symbol === sym) || CRYPTO_ASSETS[0];
 
-      const market30m = await fetchHistoricalCandles(exchange, '30m', 220, asset.symbol);
-      const candles = market30m.candles;
+      let rsiStats: StrategyPairStats;
+      let bjStats: StrategyPairStats;
+
+      if (statsProvider) {
+        const pair = await statsProvider.getPairStats30m(asset.symbol);
+        rsiStats = pair.rsi_bb;
+        bjStats = pair.bj_bot;
+      } else {
+        const market30m = await fetchHistoricalCandles(exchange, '30m', 220, asset.symbol);
+        rsiStats = evaluateStrategyStats(
+          market30m.candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'rsi_bb',
+          '30m'
+        );
+        bjStats = evaluateStrategyStats(
+          market30m.candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'bj_bot',
+          '30m'
+        );
+      }
 
       let reportHtml = '';
       if (mode === 'rsi_bb') {
-        const rsiStats = evaluateStrategyStats(
-          candles,
-          strategyConfig,
-          bjConfig,
-          asset.symbol,
-          'rsi_bb',
-          '30m'
-        );
         reportHtml = formatTelegramStrategyStatsReport(rsiStats);
       } else if (mode === 'bj_bot') {
-        const bjStats = evaluateStrategyStats(
-          candles,
-          strategyConfig,
-          bjConfig,
-          asset.symbol,
-          'bj_bot',
-          '30m'
-        );
         reportHtml = formatTelegramStrategyStatsReport(bjStats);
       } else {
-        const rsiStats = evaluateStrategyStats(
-          candles,
-          strategyConfig,
-          bjConfig,
-          asset.symbol,
-          'rsi_bb',
-          '30m'
-        );
-        const bjStats = evaluateStrategyStats(
-          candles,
-          strategyConfig,
-          bjConfig,
-          asset.symbol,
-          'bj_bot',
-          '30m'
-        );
         reportHtml = formatTelegramBothStrategiesReport(rsiStats, bjStats);
       }
 
@@ -519,33 +522,35 @@ export async function processTelegramBotUpdate(
     }
 
     if (data === 'stat_all:summary') {
-      const rows = await Promise.all(
-        CRYPTO_ASSETS.map(async (asset) => {
-          const market30m = await fetchHistoricalCandles(
-            exchange,
-            '30m',
-            180,
-            asset.symbol
+      const rows = statsProvider
+        ? await statsProvider.getAllSummary30m()
+        : await Promise.all(
+            CRYPTO_ASSETS.map(async (asset) => {
+              const market30m = await fetchHistoricalCandles(
+                exchange,
+                '30m',
+                180,
+                asset.symbol
+              );
+              const rsi = evaluateStrategyStats(
+                market30m.candles,
+                strategyConfig,
+                bjConfig,
+                asset.symbol,
+                'rsi_bb',
+                '30m'
+              );
+              const bj = evaluateStrategyStats(
+                market30m.candles,
+                strategyConfig,
+                bjConfig,
+                asset.symbol,
+                'bj_bot',
+                '30m'
+              );
+              return { rsi, bj };
+            })
           );
-          const rsi = evaluateStrategyStats(
-            market30m.candles,
-            strategyConfig,
-            bjConfig,
-            asset.symbol,
-            'rsi_bb',
-            '30m'
-          );
-          const bj = evaluateStrategyStats(
-            market30m.candles,
-            strategyConfig,
-            bjConfig,
-            asset.symbol,
-            'bj_bot',
-            '30m'
-          );
-          return { rsi, bj };
-        })
-      );
 
       const summaryHtml = formatTelegramAllCoinsSummary(rows);
       await editOrSendTelegramMessage(

@@ -5,6 +5,13 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User,
+} from 'firebase/auth';
+import { auth, googleAuthProvider } from './lib/firebase';
+import {
   BjBotBarPoint,
   BjBotConfig,
   Candle,
@@ -150,38 +157,113 @@ export default function App() {
   const [sentSignalIds, setSentSignalIds] = useState<string[]>([]);
   const [hasServerBackend, setHasServerBackend] = useState<boolean>(true);
 
-  // При загрузке получаем состояние серверного 24/7 сканера (уже отправленные сигналы и серверные настройки)
-  useEffect(() => {
-    fetch('/api/bot/state')
-      .then((r) => {
-        if (!r.ok) {
-          setHasServerBackend(false);
-          return null;
-        }
-        setHasServerBackend(true);
-        return r.json();
-      })
-      .then((data) => {
-        if (!data) return;
-        if (Array.isArray(data.sentSignalIds)) {
-          data.sentSignalIds.forEach((id: string) => sentSignalIdsRef.current.add(id));
-          setSentSignalIds(data.sentSignalIds);
-        }
-        // Если в браузере еще не введен токен, а на сервере он задан (например через переменные окружения Render)
-        if (
-          data.telegramConfig?.botToken &&
-          data.telegramConfig?.chatId &&
-          !localStorage.getItem(STORAGE_KEY_TG)
-        ) {
-          setTelegramConfig(data.telegramConfig);
-        }
-      })
-      .catch(() => {
-        setHasServerBackend(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const idTokenRef = useRef<string | null>(null);
+  const [dbStats30mBySymbol, setDbStats30mBySymbol] = useState<
+    Partial<Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>>
+  >({});
+
+  const fetchServerStats30m = useCallback(async (token: string) => {
+    try {
+      const res = await fetch('/api/stats/30m', {
+        headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.stats) {
+        setDbStats30mBySymbol(data.stats);
+      }
+    } catch {
+      // ignore offline
+    }
   }, []);
 
-  // Резервный опрос кнопок Telegram-бота из браузера (если приложение запущено как Static Site без server.ts)
+  // Проверка доступности серверного бэкенда
+  useEffect(() => {
+    fetch('/api/health')
+      .then((r) => setHasServerBackend(r.ok))
+      .catch(() => setHasServerBackend(false));
+  }, []);
+
+  // Подписка на авторизацию Firebase Google Auth (токен хранится только в памяти)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setAuthUser(user);
+      setIsAuthLoading(false);
+      if (!user) {
+        idTokenRef.current = null;
+        return;
+      }
+
+      try {
+        const token = await user.getIdToken();
+        idTokenRef.current = token;
+
+        const stateRes = await fetch('/api/bot/state', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (stateRes.ok) {
+          setHasServerBackend(true);
+          const data = await stateRes.json();
+          if (Array.isArray(data.sentSignalIds)) {
+            data.sentSignalIds.forEach((id: string) =>
+              sentSignalIdsRef.current.add(id)
+            );
+            setSentSignalIds(data.sentSignalIds);
+          }
+          if (
+            data.telegramConfig?.botToken &&
+            data.telegramConfig?.chatId &&
+            !localStorage.getItem(STORAGE_KEY_TG)
+          ) {
+            setTelegramConfig(data.telegramConfig);
+          }
+        }
+
+        await fetchServerStats30m(token);
+      } catch {
+        // ignore network error
+      }
+    });
+
+    return () => unsubscribe();
+  }, [fetchServerStats30m]);
+
+  // Периодическое обновление накопленной 30m статистики из бэкенда раз в 60 сек
+  useEffect(() => {
+    if (!authUser) return;
+    const timer = setInterval(async () => {
+      try {
+        const token = await authUser.getIdToken();
+        idTokenRef.current = token;
+        await fetchServerStats30m(token);
+      } catch {
+        // ignore
+      }
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [authUser, fetchServerStats30m]);
+
+  const handleSignInGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleAuthProvider);
+    } catch {
+      // user closed popup or auth cancelled
+    }
+  };
+
+  const handleSignOutGoogle = async () => {
+    try {
+      idTokenRef.current = null;
+      await signOut(auth);
+      setDbStats30mBySymbol({});
+    } catch {
+      // ignore
+    }
+  };
+
+  // Резервный опрос кнопок Telegram-бота из браузера (если приложение запущено без server.ts)
   useEffect(() => {
     if (hasServerBackend || !telegramConfig.botToken.trim()) return;
     let offset = 0;
@@ -218,11 +300,17 @@ export default function App() {
     return () => clearInterval(timer);
   }, [hasServerBackend, telegramConfig.botToken, exchange, strategyConfig, bjConfig]);
 
-  // Автоматическая синхронизация всех настроек со 24/7 сервером (server.ts)
+  // Автоматическая синхронизация всех настроек с сервером (только для авторизованного пользователя)
   useEffect(() => {
+    const token = idTokenRef.current;
+    if (!authUser || !token) return;
+
     fetch('/api/bot/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         exchange,
         timeframe,
@@ -233,7 +321,7 @@ export default function App() {
     }).catch(() => {
       // ignore network error
     });
-  }, [exchange, timeframe, strategyConfig, bjConfig, telegramConfig]);
+  }, [authUser, exchange, timeframe, strategyConfig, bjConfig, telegramConfig]);
 
   const handleUpdateStrategy = (cfg: RsiBbStrategyConfig) => {
     setStrategyConfig(cfg);
@@ -311,37 +399,58 @@ export default function App() {
   const activeBjBars = bjDataBySymbol[symbol]?.bars || [];
 
   // Статистика успешности сделок (интервал 30 мин) для каждой валюты и каждой стратегии
+  // Объединяет накопленную историю с сервера с актуальным расчетом по свежим 30m свечам
   const stats30mBySymbol = useMemo(() => {
     const result: Partial<
       Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
     > = {};
     for (const asset of CRYPTO_ASSETS) {
+      const dbEntry = dbStats30mBySymbol[asset.symbol];
       const c30 =
         candles30mBySymbol[asset.symbol] ||
         (timeframe === '30m' ? candlesBySymbol[asset.symbol] : undefined);
+
       if (c30 && c30.length > 0) {
+        const liveRsi = evaluateStrategyStats(
+          c30,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'rsi_bb',
+          '30m'
+        );
+        const liveBj = evaluateStrategyStats(
+          c30,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'bj_bot',
+          '30m'
+        );
+
         result[asset.symbol] = {
-          rsi_bb: evaluateStrategyStats(
-            c30,
-            strategyConfig,
-            bjConfig,
-            asset.symbol,
-            'rsi_bb',
-            '30m'
-          ),
-          bj_bot: evaluateStrategyStats(
-            c30,
-            strategyConfig,
-            bjConfig,
-            asset.symbol,
-            'bj_bot',
-            '30m'
-          ),
+          rsi_bb:
+            dbEntry?.rsi_bb && dbEntry.rsi_bb.totalTrades >= liveRsi.totalTrades
+              ? dbEntry.rsi_bb
+              : liveRsi,
+          bj_bot:
+            dbEntry?.bj_bot && dbEntry.bj_bot.totalTrades >= liveBj.totalTrades
+              ? dbEntry.bj_bot
+              : liveBj,
         };
+      } else if (dbEntry) {
+        result[asset.symbol] = dbEntry;
       }
     }
     return result;
-  }, [candles30mBySymbol, candlesBySymbol, timeframe, strategyConfig, bjConfig]);
+  }, [
+    dbStats30mBySymbol,
+    candles30mBySymbol,
+    candlesBySymbol,
+    timeframe,
+    strategyConfig,
+    bjConfig,
+  ]);
 
   // Все сигналы по выбранной на графике монете (чтобы на графике отображались все метки BUY/SELL и LONG/SHORT/L EXIT/S EXIT)
   const activeSymbolSignals: StrategySignalEvent[] = useMemo(() => {
@@ -565,11 +674,24 @@ export default function App() {
             sendTelegramAlert(telegramConfig, msg).then((res) => {
               if (res.ok) {
                 setSentSignalIds((prev) => [...prev, signalId]);
-                fetch('/api/bot/mark-sent', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ signalId }),
-                }).catch(() => {});
+                const token = idTokenRef.current;
+                if (token) {
+                  fetch('/api/bot/mark-sent', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                      signalId,
+                      symbol: asset.symbol,
+                      strategyName: 'RSI+BB',
+                      signalType: confluence.activeSignal,
+                      price: lastC.close,
+                      candleTimestamp: lastC.timestamp,
+                    }),
+                  }).catch(() => {});
+                }
                 setTelegramFeedback({
                   type: 'success',
                   message: `Алерт ${asset.baseAsset}/USDT (RSI+BB) отправлен в Telegram`,
@@ -617,11 +739,24 @@ export default function App() {
             sendTelegramAlert(telegramConfig, msg).then((res) => {
               if (res.ok) {
                 setSentSignalIds((prev) => [...prev, signalId]);
-                fetch('/api/bot/mark-sent', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ signalId }),
-                }).catch(() => {});
+                const token = idTokenRef.current;
+                if (token) {
+                  fetch('/api/bot/mark-sent', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                      signalId,
+                      symbol: asset.symbol,
+                      strategyName: 'Bj Bot',
+                      signalType: lastBjBar.signal,
+                      price: lastC.close,
+                      candleTimestamp: lastC.timestamp,
+                    }),
+                  }).catch(() => {});
+                }
                 setTelegramFeedback({
                   type: 'success',
                   message: `Алерт ${asset.baseAsset}/USDT (Bj Bot) отправлен в Telegram`,
@@ -828,6 +963,10 @@ export default function App() {
             allSignals={allSignals}
             stats30mBySymbol={stats30mBySymbol}
             timeframe={timeframe}
+            userEmail={authUser?.email || null}
+            isAuthLoading={isAuthLoading}
+            onSignInGoogle={handleSignInGoogle}
+            onSignOutGoogle={handleSignOutGoogle}
           />
         </div>
       </main>

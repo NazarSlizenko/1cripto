@@ -28,6 +28,8 @@ import {
   Check,
   Info,
   TrendingUp,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 
 interface RightControlPanelProps {
@@ -61,6 +63,10 @@ interface RightControlPanelProps {
     Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
   >;
   timeframe: TimeframeId;
+  userEmail: string | null;
+  isAuthLoading: boolean;
+  onSignInGoogle: () => Promise<void>;
+  onSignOutGoogle: () => Promise<void>;
 }
 
 export const RightControlPanel: React.FC<RightControlPanelProps> = ({
@@ -89,6 +95,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   allSignals,
   stats30mBySymbol,
   timeframe,
+  userEmail,
+  isAuthLoading,
+  onSignInGoogle,
+  onSignOutGoogle,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'strategy' | 'stats30m' | 'telegram' | 'signals'
@@ -122,8 +132,40 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      {/* ПАНЕЛЬ 1 (Crisp White Panel): Цена выбранной криптовалюты (с выпадающим меню выбора монеты), метрики 24ч и уровни RSI / Боллинджера */}
+      {/* ПАНЕЛЬ 1 (Crisp White Panel): Аккаунт, цена выбранной криптовалюты, метрики 24ч и уровни RSI / Боллинджера */}
       <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 relative z-20">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 text-xs">
+          {isAuthLoading ? (
+            <span className="text-slate-400">Проверка профиля...</span>
+          ) : userEmail ? (
+            <>
+              <span className="font-medium text-slate-700 truncate max-w-[210px]">
+                {userEmail}
+              </span>
+              <button
+                type="button"
+                onClick={onSignOutGoogle}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Выйти</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-slate-500">Синхронизация профиля и истории</span>
+              <button
+                type="button"
+                onClick={onSignInGoogle}
+                className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-cyan-300 font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Войти через Google</span>
+              </button>
+            </>
+          )}
+        </div>
+
         <div className="flex items-baseline justify-between pb-4 border-b border-slate-100">
           <div className="relative">
             <button
