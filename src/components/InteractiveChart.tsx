@@ -14,6 +14,8 @@ import {
   ExchangeId,
   formatCryptoPrice,
   Indicators,
+  KeaBarPoint,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategySignalEvent,
   TimeframeId,
@@ -36,11 +38,14 @@ interface InteractiveChartProps {
   candles: Candle[];
   indicators: Indicators[];
   bjBars: BjBotBarPoint[];
+  keaBars: KeaBarPoint[];
   signals: StrategySignalEvent[];
   strategyConfig: RsiBbStrategyConfig;
   onUpdateStrategy: (cfg: RsiBbStrategyConfig) => void;
   bjConfig: BjBotConfig;
   onUpdateBjConfig: (cfg: BjBotConfig) => void;
+  keaConfig: KeaConfig;
+  onUpdateKeaConfig: (cfg: KeaConfig) => void;
   timeframe: TimeframeId;
   exchange: ExchangeId;
   onTimeframeChange: (tf: TimeframeId) => void;
@@ -83,11 +88,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   candles,
   indicators,
   bjBars,
+  keaBars,
   signals,
   strategyConfig,
   onUpdateStrategy,
   bjConfig,
   onUpdateBjConfig,
+  keaConfig,
+  onUpdateKeaConfig,
   timeframe,
   exchange,
   onTimeframeChange,
@@ -96,6 +104,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   // Индикаторы на основном графике
   const [showBB, setShowBB] = useState(true);
   const [showBjBot, setShowBjBot] = useState(true); // 3Commas Bot / Bj Bot
+  const [showKeaAlpha, setShowKeaAlpha] = useState(true); // KEA-30m (Kalman + 24h VWAP)
   const [showEmaFast, setShowEmaFast] = useState(false); // EMA 9 & 21
   const [showEmaSlow, setShowEmaSlow] = useState(false); // EMA 50 & 200
   const [showVolume, setShowVolume] = useState(true);
@@ -107,7 +116,9 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   // Выпадающие меню: Криптовалюты и Индикаторы
   const [isCryptoMenuOpen, setIsCryptoMenuOpen] = useState(false);
   const [isIndicatorsMenuOpen, setIsIndicatorsMenuOpen] = useState(false);
-  const [expandedSettingsId, setExpandedSettingsId] = useState<'bb' | 'bj' | 'rsi' | null>(null);
+  const [expandedSettingsId, setExpandedSettingsId] = useState<
+    'bb' | 'bj' | 'rsi' | 'kea' | null
+  >(null);
 
   // Масштабирование оси цены: А (Автофит) и Л (Логарифмическая шкала)
   const [isAutoScale, setIsAutoScale] = useState(true);
@@ -158,6 +169,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   const visibleCandles = candles.slice(startIndex, endIndex);
   const visibleIndicators = indicators.slice(startIndex, endIndex);
   const visibleBjBars = bjBars.slice(startIndex, endIndex);
+  const visibleKeaBars = keaBars.slice(startIndex, endIndex);
 
   const currentSymbolSignals = signals.filter((s) => s.symbol === symbol);
   const signalMap = new Map<number, StrategySignalEvent[]>();
@@ -512,6 +524,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
       : visibleCandles.length - 1;
   const hoveredCandle = visibleCandles[activeIndex];
   const hoveredInd = visibleIndicators[activeIndex];
+  const hoveredKeaBar = visibleKeaBars[activeIndex];
   const hoveredSignals = hoveredCandle
     ? signalMap.get(hoveredCandle.timestamp) || []
     : [];
@@ -537,6 +550,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   const activeIndicatorsCount =
     (showBB ? 1 : 0) +
     (showBjBot ? 1 : 0) +
+    (showKeaAlpha ? 1 : 0) +
     (showEmaFast ? 1 : 0) +
     (showEmaSlow ? 1 : 0) +
     (showVolume ? 1 : 0) +
@@ -1179,6 +1193,167 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   )}
                 </div>
 
+                {/* 3b. KEA-30m (Kalman-Entropy Alpha) + встроенные настройки */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        const next = !showKeaAlpha;
+                        setShowKeaAlpha(next);
+                        onUpdateKeaConfig({ ...keaConfig, enabled: next });
+                      }}
+                      className="flex-1 flex items-center gap-2 text-left"
+                    >
+                      <span
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
+                          showKeaAlpha ? 'bg-fuchsia-500 text-white' : 'border border-slate-300 bg-white'
+                        }`}
+                      >
+                        {showKeaAlpha && <Check className="w-3 h-3" />}
+                      </span>
+                      <div>
+                        <div className="font-semibold text-slate-800">
+                          KEA-30m (Kalman-Entropy)
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          ER ≥{keaConfig.erImpulseThreshold.toFixed(2)} · VWAP Z ±{keaConfig.zScoreEntry.toFixed(1)}
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        setExpandedSettingsId(expandedSettingsId === 'kea' ? null : 'kea')
+                      }
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        expandedSettingsId === 'kea'
+                          ? 'bg-slate-900 text-fuchsia-300'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                      }`}
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {expandedSettingsId === 'kea' && (
+                    <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-600">ER порог импульса:</span>
+                          <span className="font-mono font-semibold text-slate-900">
+                            {keaConfig.erImpulseThreshold.toFixed(2)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.22}
+                          max={0.55}
+                          step={0.02}
+                          value={keaConfig.erImpulseThreshold}
+                          onChange={(e) =>
+                            onUpdateKeaConfig({
+                              ...keaConfig,
+                              erImpulseThreshold: Number(e.target.value),
+                            })
+                          }
+                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-600">Z-Score возврат (VWAP):</span>
+                          <span className="font-mono font-semibold text-slate-900">
+                            ±{keaConfig.zScoreEntry.toFixed(1)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1.4}
+                          max={3.2}
+                          step={0.1}
+                          value={keaConfig.zScoreEntry}
+                          onChange={(e) =>
+                            onUpdateKeaConfig({
+                              ...keaConfig,
+                              zScoreEntry: Number(e.target.value),
+                            })
+                          }
+                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-600">ATR Стоп-лосс:</span>
+                          <span className="font-mono font-semibold text-slate-900">
+                            ×{keaConfig.atrStopMult.toFixed(2)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.8}
+                          max={2.5}
+                          step={0.05}
+                          value={keaConfig.atrStopMult}
+                          onChange={(e) =>
+                            onUpdateKeaConfig({
+                              ...keaConfig,
+                              atrStopMult: Number(e.target.value),
+                            })
+                          }
+                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-200/70 space-y-1.5">
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Импульс-режим (Калман + GK)</span>
+                          <input
+                            type="checkbox"
+                            checked={keaConfig.enableImpulseMode}
+                            onChange={(e) =>
+                              onUpdateKeaConfig({
+                                ...keaConfig,
+                                enableImpulseMode: e.target.checked,
+                              })
+                            }
+                            className="accent-fuchsia-500 rounded"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Z-возврат к 24h VWAP</span>
+                          <input
+                            type="checkbox"
+                            checked={keaConfig.enableRevertMode}
+                            onChange={(e) =>
+                              onUpdateKeaConfig({
+                                ...keaConfig,
+                                enableRevertMode: e.target.checked,
+                              })
+                            }
+                            className="accent-fuchsia-500 rounded"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                          <span>Фильтр тренда 4h EMA 200</span>
+                          <input
+                            type="checkbox"
+                            checked={keaConfig.use4hTrendFilter}
+                            onChange={(e) =>
+                              onUpdateKeaConfig({
+                                ...keaConfig,
+                                use4hTrendFilter: e.target.checked,
+                              })
+                            }
+                            className="accent-fuchsia-500 rounded"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Остальные индикаторы */}
                 <button
                   onClick={() => setShowEmaFast(!showEmaFast)}
@@ -1295,6 +1470,16 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             )}
             <span className="text-slate-500">·</span>
             <span className="text-slate-200">RSI: {hoveredInd.rsi.toFixed(1)}</span>
+            {showKeaAlpha && hoveredKeaBar && (
+              <>
+                <span className="text-slate-500">·</span>
+                <span className="text-fuchsia-300">
+                  ER: {hoveredKeaBar.er.toFixed(2)} · Z:{' '}
+                  {hoveredKeaBar.zScore >= 0 ? '+' : ''}
+                  {hoveredKeaBar.zScore.toFixed(2)}
+                </span>
+              </>
+            )}
             {hoveredSignals.map((hs) => {
               const badgeLabel =
                 hs.type === 'OVERSOLD_BUY'
@@ -1313,6 +1498,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   ? 'text-amber-400 font-semibold'
                   : hs.type === 'L EXIT'
                   ? 'text-purple-400 font-semibold'
+                  : hs.type === 'KEA LONG'
+                  ? 'text-fuchsia-400 font-semibold'
+                  : hs.type === 'KEA SHORT'
+                  ? 'text-pink-400 font-semibold'
+                  : hs.type === 'KEA EXIT'
+                  ? 'text-yellow-300 font-semibold'
                   : 'text-teal-300 font-semibold';
               return (
                 <React.Fragment key={hs.id}>
@@ -1511,6 +1702,63 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               </g>
             )}
 
+            {/* Стратегия №3: KEA-30m (Адаптивный фильтр Калмана + 24h Rolling VWAP + активные SL/TP) */}
+            {showKeaAlpha && visibleKeaBars.length > 1 && (
+              <g>
+                <path
+                  d={buildLinePath(
+                    visibleKeaBars.map((bar, idx) => ({ idx, val: bar.vwap }))
+                  )}
+                  fill="none"
+                  stroke="#fbbf24"
+                  strokeWidth="1.2"
+                  strokeDasharray="5 4"
+                  strokeOpacity="0.68"
+                />
+                <path
+                  d={buildLinePath(
+                    visibleKeaBars.map((bar, idx) => ({ idx, val: bar.kalman }))
+                  )}
+                  fill="none"
+                  stroke="#d946ef"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.92"
+                />
+                {visibleKeaBars.map((bar, idx) => {
+                  if (idx === 0) return null;
+                  const prevBar = visibleKeaBars[idx - 1];
+                  const x1 = getX(idx - 1);
+                  const x2 = getX(idx);
+                  return (
+                    <g key={`kea-lvl-${idx}`}>
+                      {bar.stopPrice !== null && prevBar.stopPrice !== null && (
+                        <line
+                          x1={x1}
+                          y1={getY(prevBar.stopPrice)}
+                          x2={x2}
+                          y2={getY(bar.stopPrice)}
+                          stroke="#fb7185"
+                          strokeWidth="1.3"
+                          strokeDasharray="2 2"
+                        />
+                      )}
+                      {bar.targetPrice !== null && prevBar.targetPrice !== null && (
+                        <line
+                          x1={x1}
+                          y1={getY(prevBar.targetPrice)}
+                          x2={x2}
+                          y2={getY(bar.targetPrice)}
+                          stroke="#a3e635"
+                          strokeWidth="1.3"
+                          strokeDasharray="2 2"
+                        />
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
             {/* Быстрые EMA 9 и EMA 21 */}
             {showEmaFast && (
               <g>
@@ -1598,7 +1846,8 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       const isBelow =
                         sig.type === 'OVERSOLD_BUY' ||
                         sig.type === 'LONG' ||
-                        sig.type === 'S EXIT';
+                        sig.type === 'S EXIT' ||
+                        sig.type === 'KEA LONG';
 
                       const stackOffset = isBelow ? belowCount * 22 : aboveCount * 22;
                       if (isBelow) belowCount++;
@@ -1608,7 +1857,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                         ? getY(c.low) + 15 + stackOffset
                         : getY(c.high) - 15 - stackOffset;
 
-                      // Отдельные цвета для Стратегии 1 (BUY/SELL) и Стратегии 2 (LONG, SHORT, L EXIT, S EXIT)
+                      // Отдельные цвета для Стратегии 1 (BUY/SELL), Стратегии 2 (Bj Bot) и Стратегии 3 (KEA-30m)
                       let badgeColor = '#00f0ff';
                       let textColor = '#060d1f';
                       let labelText = 'BUY';
@@ -1644,6 +1893,21 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                         textColor = '#060d1f';
                         labelText = 'S EXIT';
                         boxWidth = 44;
+                      } else if (sig.type === 'KEA LONG') {
+                        badgeColor = '#d946ef'; // Фуксия (Стратегия 3 KEA LONG)
+                        textColor = '#ffffff';
+                        labelText = 'KEA LONG';
+                        boxWidth = 48;
+                      } else if (sig.type === 'KEA SHORT') {
+                        badgeColor = '#ec4899'; // Малиновый (Стратегия 3 KEA SHORT)
+                        textColor = '#ffffff';
+                        labelText = 'KEA SHORT';
+                        boxWidth = 52;
+                      } else if (sig.type === 'KEA EXIT') {
+                        badgeColor = '#eab308'; // Золотой (Стратегия 3 KEA EXIT)
+                        textColor = '#060d1f';
+                        labelText = 'KEA EXIT';
+                        boxWidth = 48;
                       }
 
                       return (
@@ -1860,6 +2124,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       ? '#f59e0b'
                       : sig.type === 'L EXIT'
                       ? '#a855f7'
+                      : sig.type === 'KEA LONG'
+                      ? '#d946ef'
+                      : sig.type === 'KEA SHORT'
+                      ? '#ec4899'
+                      : sig.type === 'KEA EXIT'
+                      ? '#eab308'
                       : '#14b8a6';
                   return (
                     <circle

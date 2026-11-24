@@ -11,6 +11,7 @@ import {
   ExchangeId,
   formatCryptoPrice,
   Indicators,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyPairStats,
   StrategySignalEvent,
@@ -18,6 +19,7 @@ import {
   TimeframeId,
   Trend4hInfo,
 } from '../types/crypto';
+import { DEFAULT_KEA_CONFIG } from '../math/keaAlpha';
 import { fetchHistoricalCandles } from './exchangeService';
 import { computeIndicators } from '../math/indicators';
 import {
@@ -294,6 +296,49 @@ export function formatSignalTelegramMessage(
         }`
       : '';
 
+  if (signal.strategyName === 'KEA-30m') {
+    const titleMap: Record<string, string> = {
+      'KEA LONG': `🟣 <b>KEA-30m · ${signal.baseAsset}/USDT — LONG</b>`,
+      'KEA SHORT': `🩷 <b>KEA-30m · ${signal.baseAsset}/USDT — SHORT</b>`,
+      'KEA EXIT': `🟡 <b>KEA-30m · ${signal.baseAsset}/USDT — EXIT (Закрытие)</b>`,
+    };
+    const header = titleMap[signal.type] || `<b>KEA-30m ${signal.baseAsset}/USDT — ${signal.type}</b>`;
+    const modeLabel =
+      signal.keaMode === 'Z_REVERT'
+        ? 'Упругий возврат к 24h VWAP'
+        : 'Импульсный пробой Калмана';
+    const quantMetrics =
+      signal.erValue !== undefined && signal.zScore !== undefined
+        ? `📐 <b>ER:</b> ${signal.erValue.toFixed(2)} · <b>Z-Score:</b> ${
+            signal.zScore >= 0 ? '+' : ''
+          }${signal.zScore.toFixed(2)}${
+            signal.gkVolRatio !== undefined ? ` · <b>GK-Сжатие:</b> ${signal.gkVolRatio.toFixed(2)}` : ''
+          }`
+        : '';
+
+    return [
+      header,
+      scoreLine,
+      '',
+      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
+      `🧠 <b>Режим:</b> ${modeLabel}`,
+      `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
+      signal.stopPrice
+        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}`
+        : '',
+      signal.targetPrice
+        ? `🎯 <b>Цель TP:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        : '',
+      '',
+      quantMetrics,
+      trendLine,
+      volLine,
+      `🕒 <i>Свеча: ${dateStr}</i>`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
   if (signal.strategyName === 'Bj Bot') {
     const titleMap: Record<string, string> = {
       LONG: `🔵 <b>BJ BOT · ${signal.baseAsset}/USDT — LONG</b>`,
@@ -416,7 +461,13 @@ export function buildStatsStrategyInlineKeyboard(symbol: CryptoSymbol) {
       ],
       [
         {
-          text: `⚖️ Сравнить обе стратегии (${asset.baseAsset})`,
+          text: `3️⃣ KEA-30m Kalman-Entropy (${asset.baseAsset})`,
+          callback_data: `stat_show:${symbol}:kea_alpha`,
+        },
+      ],
+      [
+        {
+          text: `⚖️ Сравнить все 3 стратегии (${asset.baseAsset})`,
           callback_data: `stat_show:${symbol}:both`,
         },
       ],
@@ -432,14 +483,14 @@ export function buildStatsStrategyInlineKeyboard(symbol: CryptoSymbol) {
 
 export function buildStatsResultInlineKeyboard(
   symbol: CryptoSymbol,
-  activeMode: 'rsi_bb' | 'bj_bot' | 'both'
+  activeMode: 'rsi_bb' | 'bj_bot' | 'kea_alpha' | 'both'
 ) {
   const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol) || CRYPTO_ASSETS[0];
   const switchRow: { text: string; callback_data: string }[] = [];
 
   if (activeMode !== 'rsi_bb') {
     switchRow.push({
-      text: '1️⃣ RSI + BB',
+      text: '1️⃣ RSI+BB',
       callback_data: `stat_show:${symbol}:rsi_bb`,
     });
   }
@@ -449,9 +500,15 @@ export function buildStatsResultInlineKeyboard(
       callback_data: `stat_show:${symbol}:bj_bot`,
     });
   }
+  if (activeMode !== 'kea_alpha') {
+    switchRow.push({
+      text: '3️⃣ KEA-30m',
+      callback_data: `stat_show:${symbol}:kea_alpha`,
+    });
+  }
   if (activeMode !== 'both') {
     switchRow.push({
-      text: '⚖️ Обе',
+      text: '⚖️ Все 3',
       callback_data: `stat_show:${symbol}:both`,
     });
   }
@@ -678,9 +735,13 @@ export interface MarketOverview4hRow {
 export interface TelegramStatsProvider {
   getPairStats30m: (
     symbol: CryptoSymbol
-  ) => Promise<{ rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>;
+  ) => Promise<{
+    rsi_bb: StrategyPairStats;
+    bj_bot: StrategyPairStats;
+    kea_alpha?: StrategyPairStats;
+  }>;
   getAllSummary30m: () => Promise<
-    { rsi: StrategyPairStats; bj: StrategyPairStats }[]
+    { rsi: StrategyPairStats; bj: StrategyPairStats; kea?: StrategyPairStats }[]
   >;
   getMarketOverview4h?: () => Promise<MarketOverview4hRow[]>;
   getTelegramConfig?: () => TelegramConfig;
@@ -722,7 +783,8 @@ async function buildTopPairsMessageAndKeyboard(
   exchange: ExchangeId,
   strategyConfig: RsiBbStrategyConfig,
   bjConfig: BjBotConfig,
-  statsProvider?: TelegramStatsProvider
+  statsProvider?: TelegramStatsProvider,
+  keaConfig: KeaConfig = DEFAULT_KEA_CONFIG
 ): Promise<{ html: string; keyboard: Record<string, unknown> }> {
   const rows = statsProvider
     ? await statsProvider.getAllSummary30m()
@@ -736,7 +798,9 @@ async function buildTopPairsMessageAndKeyboard(
               bjConfig,
               asset.symbol,
               'rsi_bb',
-              '30m'
+              '30m',
+              undefined,
+              keaConfig
             ),
             bj: evaluateStrategyStats(
               market30m.candles,
@@ -744,7 +808,19 @@ async function buildTopPairsMessageAndKeyboard(
               bjConfig,
               asset.symbol,
               'bj_bot',
-              '30m'
+              '30m',
+              undefined,
+              keaConfig
+            ),
+            kea: evaluateStrategyStats(
+              market30m.candles,
+              strategyConfig,
+              bjConfig,
+              asset.symbol,
+              'kea_alpha',
+              '30m',
+              undefined,
+              keaConfig
             ),
           };
         })
@@ -754,6 +830,7 @@ async function buildTopPairsMessageAndKeyboard(
   for (const r of rows) {
     if (r.rsi.totalTrades > 0) flattened.push(r.rsi);
     if (r.bj.totalTrades > 0) flattened.push(r.bj);
+    if (r.kea && r.kea.totalTrades > 0) flattened.push(r.kea);
   }
 
   flattened.sort((a, b) => {
@@ -766,7 +843,12 @@ async function buildTopPairsMessageAndKeyboard(
     top5.length > 0
       ? top5.map((st, idx) => {
           const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
-          const stratShort = st.strategyId === 'rsi_bb' ? 'RSI+BB' : 'Bj Bot';
+          const stratShort =
+            st.strategyId === 'rsi_bb'
+              ? 'RSI+BB'
+              : st.strategyId === 'bj_bot'
+              ? 'Bj Bot'
+              : 'KEA-30m';
           const pnlSign = st.totalPnlPercent >= 0 ? '+' : '';
           return `${medal} <b>${st.baseAsset}/USDT · ${stratShort}</b>\n   Win Rate: <b>${st.winRate.toFixed(
             1
@@ -785,7 +867,13 @@ async function buildTopPairsMessageAndKeyboard(
   ].join('\n');
 
   const quickButtons = top5.slice(0, 4).map((st) => ({
-    text: `${st.baseAsset} (${st.strategyId === 'rsi_bb' ? 'RSI+BB' : 'BjBot'})`,
+    text: `${st.baseAsset} (${
+      st.strategyId === 'rsi_bb'
+        ? 'RSI+BB'
+        : st.strategyId === 'bj_bot'
+        ? 'BjBot'
+        : 'KEA-30m'
+    })`,
     callback_data: `stat_show:${st.symbol}:${st.strategyId}`,
   }));
 
@@ -853,7 +941,8 @@ export async function processTelegramBotUpdate(
   exchange: ExchangeId,
   strategyConfig: RsiBbStrategyConfig,
   bjConfig: BjBotConfig,
-  statsProvider?: TelegramStatsProvider
+  statsProvider?: TelegramStatsProvider,
+  keaConfig: KeaConfig = DEFAULT_KEA_CONFIG
 ): Promise<void> {
   const token = botToken.trim();
   if (!token) return;
@@ -881,7 +970,7 @@ export async function processTelegramBotUpdate(
       const menuText = [
         '📊 <b>СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН)</b>',
         '',
-        'Выберите криптовалюту ниже для расчета статистики по стратегиям:',
+        'Выберите криптовалюту ниже для расчета статистики по всем 3 стратегиям:',
       ].join('\n');
       await editOrSendTelegramMessage(
         token,
@@ -915,16 +1004,32 @@ export async function processTelegramBotUpdate(
     if (data.startsWith('stat_show:')) {
       const parts = data.split(':');
       const sym = (parts[1] || 'BTCUSDT') as CryptoSymbol;
-      const mode = (parts[2] || 'both') as 'rsi_bb' | 'bj_bot' | 'both';
+      const mode = (parts[2] || 'both') as 'rsi_bb' | 'bj_bot' | 'kea_alpha' | 'both';
       const asset = CRYPTO_ASSETS.find((a) => a.symbol === sym) || CRYPTO_ASSETS[0];
 
       let rsiStats: StrategyPairStats;
       let bjStats: StrategyPairStats;
+      let keaStats: StrategyPairStats;
 
       if (statsProvider) {
         const pair = await statsProvider.getPairStats30m(asset.symbol);
         rsiStats = pair.rsi_bb;
         bjStats = pair.bj_bot;
+        if (pair.kea_alpha) {
+          keaStats = pair.kea_alpha;
+        } else {
+          const market30m = await fetchHistoricalCandles(exchange, '30m', 220, asset.symbol);
+          keaStats = evaluateStrategyStats(
+            market30m.candles,
+            strategyConfig,
+            bjConfig,
+            asset.symbol,
+            'kea_alpha',
+            '30m',
+            undefined,
+            keaConfig
+          );
+        }
       } else {
         const market30m = await fetchHistoricalCandles(exchange, '30m', 220, asset.symbol);
         rsiStats = evaluateStrategyStats(
@@ -933,7 +1038,9 @@ export async function processTelegramBotUpdate(
           bjConfig,
           asset.symbol,
           'rsi_bb',
-          '30m'
+          '30m',
+          undefined,
+          keaConfig
         );
         bjStats = evaluateStrategyStats(
           market30m.candles,
@@ -941,7 +1048,19 @@ export async function processTelegramBotUpdate(
           bjConfig,
           asset.symbol,
           'bj_bot',
-          '30m'
+          '30m',
+          undefined,
+          keaConfig
+        );
+        keaStats = evaluateStrategyStats(
+          market30m.candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'kea_alpha',
+          '30m',
+          undefined,
+          keaConfig
         );
       }
 
@@ -950,7 +1069,9 @@ export async function processTelegramBotUpdate(
           ? formatTelegramStrategyStatsReport(rsiStats)
           : mode === 'bj_bot'
           ? formatTelegramStrategyStatsReport(bjStats)
-          : formatTelegramBothStrategiesReport(rsiStats, bjStats);
+          : mode === 'kea_alpha'
+          ? formatTelegramStrategyStatsReport(keaStats)
+          : formatTelegramBothStrategiesReport(rsiStats, bjStats, keaStats);
 
       await editOrSendTelegramMessage(
         token,
@@ -979,7 +1100,9 @@ export async function processTelegramBotUpdate(
                 bjConfig,
                 asset.symbol,
                 'rsi_bb',
-                '30m'
+                '30m',
+                undefined,
+                keaConfig
               );
               const bj = evaluateStrategyStats(
                 market30m.candles,
@@ -987,9 +1110,21 @@ export async function processTelegramBotUpdate(
                 bjConfig,
                 asset.symbol,
                 'bj_bot',
-                '30m'
+                '30m',
+                undefined,
+                keaConfig
               );
-              return { rsi, bj };
+              const kea = evaluateStrategyStats(
+                market30m.candles,
+                strategyConfig,
+                bjConfig,
+                asset.symbol,
+                'kea_alpha',
+                '30m',
+                undefined,
+                keaConfig
+              );
+              return { rsi, bj, kea };
             })
           );
 
@@ -1009,7 +1144,8 @@ export async function processTelegramBotUpdate(
         exchange,
         strategyConfig,
         bjConfig,
-        statsProvider
+        statsProvider,
+        keaConfig
       );
       await editOrSendTelegramMessage(token, chatId, messageId, html, keyboard);
       return;
@@ -1097,7 +1233,8 @@ export async function processTelegramBotUpdate(
         exchange,
         strategyConfig,
         bjConfig,
-        statsProvider
+        statsProvider,
+        keaConfig
       );
       await editOrSendTelegramMessage(token, chatId, undefined, html, keyboard);
       return;

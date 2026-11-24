@@ -14,6 +14,7 @@ import {
   CRYPTO_ASSETS,
   CryptoSymbol,
   ExchangeId,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyPairStats,
   StrategySignalEvent,
@@ -24,6 +25,7 @@ import {
 import { fetchHistoricalCandles } from './src/services/exchangeService.ts';
 import { computeIndicators } from './src/math/indicators.ts';
 import { computeBjBotSeries } from './src/math/bjBot.ts';
+import { computeKeaAlphaSeries, DEFAULT_KEA_CONFIG } from './src/math/keaAlpha.ts';
 import {
   build4hTrendTimeline,
   computeLatest4hTrendInfo,
@@ -47,6 +49,7 @@ import {
   getUserBotConfig,
   markSignalSentInDb,
   saveCompletedTrades30m,
+  Symbol30mStatsBundle,
   updateLatestTelegramConfigInDb,
   upsertUserBotConfig,
 } from './src/db/repository.ts';
@@ -68,6 +71,7 @@ interface ServerBotState {
   timeframe: TimeframeId;
   strategyConfig: RsiBbStrategyConfig;
   bjConfig: BjBotConfig;
+  keaConfig: KeaConfig;
   telegramConfig: TelegramConfig;
   sentSignalIds: string[];
   lastScanAt: number | null;
@@ -112,6 +116,7 @@ const defaultState: ServerBotState = {
     useFlatFilter: true,
     minBbWidth: 1.5,
   },
+  keaConfig: { ...DEFAULT_KEA_CONFIG },
   telegramConfig: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -133,9 +138,7 @@ let lastSentSignalsCleanupAt = 0;
 
 let cachedStats30m: {
   updatedAt: number;
-  data: Partial<
-    Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
-  >;
+  data: Partial<Record<CryptoSymbol, Symbol30mStatsBundle>>;
 } | null = null;
 
 const trend4hCache: Record<
@@ -217,6 +220,7 @@ async function hydrateStateFromDbOnce(): Promise<void> {
         timeframe: latestCfg.timeframe,
         strategyConfig: { ...botState.strategyConfig, ...latestCfg.strategyConfig },
         bjConfig: { ...botState.bjConfig, ...latestCfg.bjConfig },
+        keaConfig: { ...botState.keaConfig, ...(latestCfg.keaConfig || {}) },
         telegramConfig: {
           ...botState.telegramConfig,
           ...latestCfg.telegramConfig,
@@ -245,7 +249,7 @@ async function sync30mTradesToPostgres(): Promise<void> {
   if (isSyncingStats || !isDatabaseConfigured()) return;
   isSyncingStats = true;
   try {
-    const { exchange, strategyConfig, bjConfig } = botState;
+    const { exchange, strategyConfig, bjConfig, keaConfig } = botState;
     const closedTradesToPersist: CompletedTradeRecord[] = [];
 
     for (const asset of CRYPTO_ASSETS) {
@@ -266,7 +270,8 @@ async function sync30mTradesToPostgres(): Promise<void> {
           asset.symbol,
           'rsi_bb',
           '30m',
-          trend4h.timeline
+          trend4h.timeline,
+          keaConfig
         );
         const bjStats = evaluateStrategyStats(
           candles,
@@ -275,10 +280,21 @@ async function sync30mTradesToPostgres(): Promise<void> {
           asset.symbol,
           'bj_bot',
           '30m',
-          trend4h.timeline
+          trend4h.timeline,
+          keaConfig
+        );
+        const keaStats = evaluateStrategyStats(
+          candles,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'kea_alpha',
+          '30m',
+          trend4h.timeline,
+          keaConfig
         );
 
-        for (const t of [...rsiStats.trades, ...bjStats.trades]) {
+        for (const t of [...rsiStats.trades, ...bjStats.trades, ...keaStats.trades]) {
           // Сохраняем только полностью закрытые сделки (не привязанные к еще открытой последней свече)
           if (t.exitTimestamp < latestOpenCandleTs || t.exitReason !== 'SIGNAL') {
             closedTradesToPersist.push(t);
@@ -302,7 +318,7 @@ async function sync30mTradesToPostgres(): Promise<void> {
 }
 
 async function getCachedAll30mStats(): Promise<
-  Partial<Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>>
+  Partial<Record<CryptoSymbol, Symbol30mStatsBundle>>
 > {
   if (cachedStats30m && Date.now() - cachedStats30m.updatedAt < STATS_CACHE_TTL_MS) {
     return cachedStats30m.data;
@@ -334,7 +350,7 @@ async function runServerMarketScan(): Promise<void> {
       await sync30mTradesToPostgres();
     }
 
-    const { exchange, timeframe, strategyConfig, bjConfig, telegramConfig } = botState;
+    const { exchange, timeframe, strategyConfig, bjConfig, keaConfig, telegramConfig } = botState;
     botState.lastScanAt = Date.now();
 
     const canSendTg =
@@ -500,6 +516,49 @@ async function runServerMarketScan(): Promise<void> {
             }
           }
         }
+
+        // 3. Проверка стратегии №3: KEA-30m (Kalman-Entropy Alpha)
+        if (keaConfig.enabled) {
+          const keaData = computeKeaAlphaSeries(
+            cList,
+            indList,
+            keaConfig,
+            timeframe,
+            asset.symbol,
+            {
+              trend4hTimeline: trend4h.timeline,
+              latestTrend4h: trend4h.latest,
+              minBbWidth: bjConfig.minBbWidth ?? 1.5,
+            }
+          );
+          const latestKeaSig = keaData.signals.find(
+            (s) => s.candleTimestamp === lastC.timestamp
+          );
+          if (
+            latestKeaSig &&
+            (latestKeaSig.confluenceScore ?? 1) >= minScore &&
+            !sentSet.has(latestKeaSig.id)
+          ) {
+            rememberSignalId(latestKeaSig.id);
+            const signalEvent: StrategySignalEvent = {
+              ...latestKeaSig,
+              telegramSent: true,
+            };
+
+            const msg = formatSignalTelegramMessage(
+              signalEvent,
+              exchange,
+              strategyConfig,
+              bjConfig
+            );
+            const res = await sendTelegramAlert(telegramConfig, msg);
+            if (!res.ok) {
+              sentSet.delete(latestKeaSig.id);
+            } else {
+              await markSignalSentInDb(signalEvent).catch(() => {});
+            }
+          }
+        }
       } catch {
         // continue scanning next coin
       }
@@ -575,6 +634,7 @@ async function startServer() {
           timeframe: userCfg.timeframe,
           strategyConfig: { ...botState.strategyConfig, ...userCfg.strategyConfig },
           bjConfig: { ...botState.bjConfig, ...userCfg.bjConfig },
+          keaConfig: { ...botState.keaConfig, ...(userCfg.keaConfig || {}) },
           telegramConfig: { ...botState.telegramConfig, ...userCfg.telegramConfig },
         };
       }
@@ -584,6 +644,7 @@ async function startServer() {
         timeframe: botState.timeframe,
         strategyConfig: botState.strategyConfig,
         bjConfig: botState.bjConfig,
+        keaConfig: botState.keaConfig,
         telegramConfig: botState.telegramConfig,
         sentSignalIds: botState.sentSignalIds.slice(-150),
         lastScanAt: botState.lastScanAt,
@@ -613,6 +674,12 @@ async function startServer() {
           ...body.bjConfig,
         };
       }
+      if (body.keaConfig) {
+        botState.keaConfig = {
+          ...botState.keaConfig,
+          ...body.keaConfig,
+        };
+      }
       if (body.telegramConfig) {
         botState.telegramConfig = {
           ...botState.telegramConfig,
@@ -626,6 +693,7 @@ async function startServer() {
           timeframe: botState.timeframe,
           strategyConfig: botState.strategyConfig,
           bjConfig: botState.bjConfig,
+          keaConfig: botState.keaConfig,
           telegramConfig: botState.telegramConfig,
         });
       }
@@ -647,7 +715,12 @@ async function startServer() {
         await markSignalSentInDb({
           id: signalId,
           symbol: (symbol || 'BTCUSDT') as CryptoSymbol,
-          strategyName: strategyName === 'Bj Bot' ? 'Bj Bot' : 'RSI+BB',
+          strategyName:
+            strategyName === 'Bj Bot'
+              ? 'Bj Bot'
+              : strategyName === 'KEA-30m'
+              ? 'KEA-30m'
+              : 'RSI+BB',
           type: signalType || 'OVERSOLD_BUY',
           price: Number(price) || 0,
           candleTimestamp: Number(candleTimestamp) || Date.now(),
@@ -730,10 +803,30 @@ async function startServer() {
                   let pair = await getPairStats30mFromDb(sym);
                   if (
                     pair.rsi_bb.totalTrades === 0 &&
-                    pair.bj_bot.totalTrades === 0
+                    pair.bj_bot.totalTrades === 0 &&
+                    pair.kea_alpha.totalTrades === 0
                   ) {
                     await sync30mTradesToPostgres();
                     pair = await getPairStats30mFromDb(sym);
+                  }
+                  if (pair.kea_alpha.totalTrades === 0) {
+                    const [market30m, trend4h] = await Promise.all([
+                      fetchHistoricalCandles(botState.exchange, '30m', 220, sym),
+                      getCached4hTrend(sym, botState.exchange),
+                    ]);
+                    pair = {
+                      ...pair,
+                      kea_alpha: evaluateStrategyStats(
+                        market30m.candles,
+                        botState.strategyConfig,
+                        botState.bjConfig,
+                        sym,
+                        'kea_alpha',
+                        '30m',
+                        trend4h.timeline,
+                        botState.keaConfig
+                      ),
+                    };
                   }
                   return pair;
                 }
@@ -749,7 +842,8 @@ async function startServer() {
                     sym,
                     'rsi_bb',
                     '30m',
-                    trend4h.timeline
+                    trend4h.timeline,
+                    botState.keaConfig
                   ),
                   bj_bot: evaluateStrategyStats(
                     market30m.candles,
@@ -758,7 +852,18 @@ async function startServer() {
                     sym,
                     'bj_bot',
                     '30m',
-                    trend4h.timeline
+                    trend4h.timeline,
+                    botState.keaConfig
+                  ),
+                  kea_alpha: evaluateStrategyStats(
+                    market30m.candles,
+                    botState.strategyConfig,
+                    botState.bjConfig,
+                    sym,
+                    'kea_alpha',
+                    '30m',
+                    trend4h.timeline,
+                    botState.keaConfig
                   ),
                 };
               },
@@ -776,7 +881,9 @@ async function startServer() {
                           botState.bjConfig,
                           a.symbol,
                           'rsi_bb',
-                          '30m'
+                          '30m',
+                          undefined,
+                          botState.keaConfig
                         ),
                       bj:
                         entry?.bj_bot ||
@@ -786,7 +893,21 @@ async function startServer() {
                           botState.bjConfig,
                           a.symbol,
                           'bj_bot',
-                          '30m'
+                          '30m',
+                          undefined,
+                          botState.keaConfig
+                        ),
+                      kea:
+                        entry?.kea_alpha ||
+                        evaluateStrategyStats(
+                          [],
+                          botState.strategyConfig,
+                          botState.bjConfig,
+                          a.symbol,
+                          'kea_alpha',
+                          '30m',
+                          undefined,
+                          botState.keaConfig
                         ),
                     };
                   });
@@ -805,7 +926,8 @@ async function startServer() {
                         asset.symbol,
                         'rsi_bb',
                         '30m',
-                        t4h.timeline
+                        t4h.timeline,
+                        botState.keaConfig
                       ),
                       bj: evaluateStrategyStats(
                         m30.candles,
@@ -814,7 +936,18 @@ async function startServer() {
                         asset.symbol,
                         'bj_bot',
                         '30m',
-                        t4h.timeline
+                        t4h.timeline,
+                        botState.keaConfig
+                      ),
+                      kea: evaluateStrategyStats(
+                        m30.candles,
+                        botState.strategyConfig,
+                        botState.bjConfig,
+                        asset.symbol,
+                        'kea_alpha',
+                        '30m',
+                        t4h.timeline,
+                        botState.keaConfig
                       ),
                     };
                   })
@@ -857,7 +990,8 @@ async function startServer() {
                 await updateLatestTelegramConfigInDb(botState.telegramConfig).catch(() => {});
                 return botState.telegramConfig;
               },
-            }
+            },
+            botState.keaConfig
           );
         }
       }

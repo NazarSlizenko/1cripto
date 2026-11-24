@@ -20,6 +20,8 @@ import {
   ExchangeId,
   formatCryptoPrice,
   Indicators,
+  KeaBarPoint,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyPairStats,
   StrategySignalEvent,
@@ -30,6 +32,7 @@ import {
 import { fetchHistoricalCandles, fetchLatestSpotPrice } from './services/exchangeService';
 import { computeIndicators } from './math/indicators';
 import { computeBjBotSeries } from './math/bjBot';
+import { computeKeaAlphaSeries, DEFAULT_KEA_CONFIG } from './math/keaAlpha';
 import {
   build4hTrendTimeline,
   computeLatest4hTrendInfo,
@@ -56,6 +59,7 @@ const TREND_4H_INTERVAL_MS = 45 * 60 * 1000;
 const STORAGE_KEY_TG = 'quantbtc_telegram_config_v1';
 const STORAGE_KEY_STRATEGY = 'quantbtc_rsibb_strategy_v2';
 const STORAGE_KEY_BJBOT = 'quantbtc_bjbot_config_v1';
+const STORAGE_KEY_KEA = 'quantbtc_kea_config_v1';
 
 const DEFAULT_STRATEGY_CONFIG: RsiBbStrategyConfig = {
   enabled: true,
@@ -161,6 +165,17 @@ export default function App() {
     return DEFAULT_BJ_CONFIG;
   });
 
+  // Конфигурация стратегии №3: KEA-30m (Kalman-Entropy Alpha)
+  const [keaConfig, setKeaConfig] = useState<KeaConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_KEA);
+      if (saved) return { ...DEFAULT_KEA_CONFIG, ...JSON.parse(saved) };
+    } catch {
+      // ignore
+    }
+    return DEFAULT_KEA_CONFIG;
+  });
+
   // Конфигурация Telegram-бота пользователя
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
     try {
@@ -186,7 +201,12 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const idTokenRef = useRef<string | null>(null);
   const [dbStats30mBySymbol, setDbStats30mBySymbol] = useState<
-    Partial<Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>>
+    Partial<
+      Record<
+        CryptoSymbol,
+        { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats; kea_alpha?: StrategyPairStats }
+      >
+    >
   >({});
 
   const fetchServerStats30m = useCallback(async (token: string) => {
@@ -243,6 +263,9 @@ export default function App() {
             !localStorage.getItem(STORAGE_KEY_TG)
           ) {
             setTelegramConfig({ ...DEFAULT_TELEGRAM_CONFIG, ...data.telegramConfig });
+          }
+          if (data.keaConfig && !localStorage.getItem(STORAGE_KEY_KEA)) {
+            setKeaConfig({ ...DEFAULT_KEA_CONFIG, ...data.keaConfig });
           }
         }
 
@@ -312,7 +335,9 @@ export default function App() {
               token,
               exchange,
               strategyConfig,
-              bjConfig
+              bjConfig,
+              undefined,
+              keaConfig
             );
           }
         }
@@ -323,7 +348,7 @@ export default function App() {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [hasServerBackend, telegramConfig.botToken, exchange, strategyConfig, bjConfig]);
+  }, [hasServerBackend, telegramConfig.botToken, exchange, strategyConfig, bjConfig, keaConfig]);
 
   // Автоматическая синхронизация всех настроек с сервером (только для авторизованного пользователя)
   useEffect(() => {
@@ -341,12 +366,13 @@ export default function App() {
         timeframe,
         strategyConfig,
         bjConfig,
+        keaConfig,
         telegramConfig,
       }),
     }).catch(() => {
       // ignore network error
     });
-  }, [authUser, exchange, timeframe, strategyConfig, bjConfig, telegramConfig]);
+  }, [authUser, exchange, timeframe, strategyConfig, bjConfig, keaConfig, telegramConfig]);
 
   const handleUpdateStrategy = (cfg: RsiBbStrategyConfig) => {
     setStrategyConfig(cfg);
@@ -361,6 +387,15 @@ export default function App() {
     setBjConfig(cfg);
     try {
       localStorage.setItem(STORAGE_KEY_BJBOT, JSON.stringify(cfg));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleUpdateKeaConfig = (cfg: KeaConfig) => {
+    setKeaConfig(cfg);
+    try {
+      localStorage.setItem(STORAGE_KEY_KEA, JSON.stringify(cfg));
     } catch {
       // ignore
     }
@@ -450,14 +485,53 @@ export default function App() {
     trend4hLatestBySymbol,
   ]);
 
+  // Вычисление KEA-30m (Kalman-Entropy Alpha) по всем загруженным криптовалютам
+  const keaDataBySymbol = useMemo(() => {
+    const result: Partial<
+      Record<CryptoSymbol, { bars: KeaBarPoint[]; signals: StrategySignalEvent[] }>
+    > = {};
+    for (const asset of CRYPTO_ASSETS) {
+      const cList = candlesBySymbol[asset.symbol];
+      const indList = indicatorsBySymbol[asset.symbol];
+      if (cList && indList && cList.length > 0) {
+        const sim = computeKeaAlphaSeries(
+          cList,
+          indList,
+          keaConfig,
+          timeframe,
+          asset.symbol,
+          {
+            trend4hTimeline: trend4hTimelineBySymbol[asset.symbol],
+            latestTrend4h: trend4hLatestBySymbol[asset.symbol],
+            minBbWidth: bjConfig.minBbWidth ?? 1.5,
+          }
+        );
+        result[asset.symbol] = { bars: sim.bars, signals: sim.signals };
+      }
+    }
+    return result;
+  }, [
+    candlesBySymbol,
+    indicatorsBySymbol,
+    keaConfig,
+    bjConfig.minBbWidth,
+    timeframe,
+    trend4hTimelineBySymbol,
+    trend4hLatestBySymbol,
+  ]);
+
   const activeIndicators = indicatorsBySymbol[symbol] || [];
   const activeBjBars = bjDataBySymbol[symbol]?.bars || [];
+  const activeKeaBars = keaDataBySymbol[symbol]?.bars || [];
 
   // Статистика успешности сделок (интервал 30 мин) для каждой валюты и каждой стратегии
-  // Объединяет накопленную историю с сервера с актуальным расчетом по свежим 30m свечам
+  // Объединяет накопную историю с сервера с актуальным расчетом по свежим 30m свечам
   const stats30mBySymbol = useMemo(() => {
     const result: Partial<
-      Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
+      Record<
+        CryptoSymbol,
+        { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats; kea_alpha: StrategyPairStats }
+      >
     > = {};
     for (const asset of CRYPTO_ASSETS) {
       const dbEntry = dbStats30mBySymbol[asset.symbol];
@@ -474,7 +548,8 @@ export default function App() {
           asset.symbol,
           'rsi_bb',
           '30m',
-          t4h
+          t4h,
+          keaConfig
         );
         const liveBj = evaluateStrategyStats(
           c30,
@@ -483,7 +558,18 @@ export default function App() {
           asset.symbol,
           'bj_bot',
           '30m',
-          t4h
+          t4h,
+          keaConfig
+        );
+        const liveKea = evaluateStrategyStats(
+          c30,
+          strategyConfig,
+          bjConfig,
+          asset.symbol,
+          'kea_alpha',
+          '30m',
+          t4h,
+          keaConfig
         );
 
         result[asset.symbol] = {
@@ -495,9 +581,28 @@ export default function App() {
             dbEntry?.bj_bot && dbEntry.bj_bot.totalTrades >= liveBj.totalTrades
               ? dbEntry.bj_bot
               : liveBj,
+          kea_alpha:
+            dbEntry?.kea_alpha && dbEntry.kea_alpha.totalTrades >= liveKea.totalTrades
+              ? dbEntry.kea_alpha
+              : liveKea,
         };
       } else if (dbEntry) {
-        result[asset.symbol] = dbEntry;
+        result[asset.symbol] = {
+          rsi_bb: dbEntry.rsi_bb,
+          bj_bot: dbEntry.bj_bot,
+          kea_alpha:
+            dbEntry.kea_alpha ||
+            evaluateStrategyStats(
+              [],
+              strategyConfig,
+              bjConfig,
+              asset.symbol,
+              'kea_alpha',
+              '30m',
+              t4h,
+              keaConfig
+            ),
+        };
       }
     }
     return result;
@@ -508,10 +613,11 @@ export default function App() {
     timeframe,
     strategyConfig,
     bjConfig,
+    keaConfig,
     trend4hTimelineBySymbol,
   ]);
 
-  // Все сигналы по выбранной на графике монете (чтобы на графике отображались все метки BUY/SELL и LONG/SHORT/L EXIT/S EXIT)
+  // Все сигналы по выбранной на графике монете (чтобы на графике отображались все метки BUY/SELL, LONG/SHORT/EXIT и KEA)
   const activeSymbolSignals: StrategySignalEvent[] = useMemo(() => {
     const list: StrategySignalEvent[] = [];
     const cList = candlesBySymbol[symbol];
@@ -532,12 +638,15 @@ export default function App() {
       list.push(...rsiBbSignals);
       const bjSignals = bjDataBySymbol[symbol]?.signals || [];
       list.push(...bjSignals);
+      const keaSignals = keaDataBySymbol[symbol]?.signals || [];
+      list.push(...keaSignals);
     }
     return list;
   }, [
     candlesBySymbol,
     indicatorsBySymbol,
     bjDataBySymbol,
+    keaDataBySymbol,
     strategyConfig,
     bjConfig.minBbWidth,
     timeframe,
@@ -579,6 +688,14 @@ export default function App() {
             telegramSent: sentSignalIds.includes(sig.id),
           });
         }
+
+        const keaSignals = keaDataBySymbol[asset.symbol]?.signals || [];
+        for (const sig of keaSignals) {
+          combined.push({
+            ...sig,
+            telegramSent: sentSignalIds.includes(sig.id),
+          });
+        }
       }
     }
     combined.sort((a, b) => b.candleTimestamp - a.candleTimestamp);
@@ -587,6 +704,7 @@ export default function App() {
     candlesBySymbol,
     indicatorsBySymbol,
     bjDataBySymbol,
+    keaDataBySymbol,
     strategyConfig,
     bjConfig.minBbWidth,
     timeframe,
@@ -933,13 +1051,68 @@ export default function App() {
           }
         }
       }
+
+      // 3. Проверка сигнала KEA-30m (Kalman-Entropy Alpha)
+      const keaData = keaDataBySymbol[asset.symbol];
+      if (keaConfig.enabled && keaData && keaData.bars.length > 0) {
+        const latestKeaSig = keaData.signals.find((s) => s.candleTimestamp === lastC.timestamp);
+        if (
+          latestKeaSig &&
+          (latestKeaSig.confluenceScore ?? 1) >= minScore &&
+          !sentSignalIdsRef.current.has(latestKeaSig.id)
+        ) {
+          sentSignalIdsRef.current.add(latestKeaSig.id);
+          const signalEvent: StrategySignalEvent = {
+            ...latestKeaSig,
+            telegramSent: true,
+          };
+
+          const msg = formatSignalTelegramMessage(
+            signalEvent,
+            exchange,
+            strategyConfig,
+            bjConfig
+          );
+          sendTelegramAlert(telegramConfig, msg).then((res) => {
+            if (res.ok) {
+              setSentSignalIds((prev) => [...prev, latestKeaSig.id]);
+              const token = idTokenRef.current;
+              if (token) {
+                fetch('/api/bot/mark-sent', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    signalId: latestKeaSig.id,
+                    symbol: asset.symbol,
+                    strategyName: 'KEA-30m',
+                    signalType: latestKeaSig.type,
+                    price: latestKeaSig.price,
+                    candleTimestamp: lastC.timestamp,
+                  }),
+                }).catch(() => {});
+              }
+              setTelegramFeedback({
+                type: 'success',
+                message: `Алерт ${asset.baseAsset}/USDT (KEA-30m · ${latestKeaSig.confluenceScore ?? 1}/3) отправлен в Telegram`,
+              });
+            } else {
+              sentSignalIdsRef.current.delete(latestKeaSig.id);
+            }
+          });
+        }
+      }
     }
   }, [
     candlesBySymbol,
     indicatorsBySymbol,
     bjDataBySymbol,
+    keaDataBySymbol,
     strategyConfig,
     bjConfig,
+    keaConfig,
     telegramConfig,
     timeframe,
     exchange,
@@ -963,6 +1136,7 @@ export default function App() {
       `• <b>Таймфрейм:</b> ${timeframe} (${exchange.toUpperCase()})`,
       `• <b>Стратегия 1:</b> RSI (${strategyConfig.rsiPeriod}) + BB (${strategyConfig.bbPeriod}, ${strategyConfig.bbStdDev}σ)`,
       `• <b>Стратегия 2:</b> Bj Bot (${bjConfig.maType1} ${bjConfig.maLength1} × ${bjConfig.maType2} ${bjConfig.maLength2}, R:R ${bjConfig.rnr})`,
+      `• <b>Стратегия 3:</b> KEA-30m (Kalman + ER ≥${keaConfig.erImpulseThreshold.toFixed(2)} + VWAP Z ±${keaConfig.zScoreEntry.toFixed(1)})`,
     ].join('\n');
 
     const res = await sendTelegramAlert(telegramConfig, testMessage);
@@ -1035,7 +1209,7 @@ export default function App() {
   // Отправка конкретного отчета статистики 30м в Telegram с кнопками переключения
   const handleSendSelectedStatsTelegram = async (
     targetSymbol: CryptoSymbol,
-    mode: 'rsi_bb' | 'bj_bot' | 'both'
+    mode: 'rsi_bb' | 'bj_bot' | 'kea_alpha' | 'both'
   ) => {
     const pairStats = stats30mBySymbol[targetSymbol];
     if (!pairStats) return;
@@ -1047,7 +1221,13 @@ export default function App() {
         ? formatTelegramStrategyStatsReport(pairStats.rsi_bb)
         : mode === 'bj_bot'
         ? formatTelegramStrategyStatsReport(pairStats.bj_bot)
-        : formatTelegramBothStrategiesReport(pairStats.rsi_bb, pairStats.bj_bot);
+        : mode === 'kea_alpha'
+        ? formatTelegramStrategyStatsReport(pairStats.kea_alpha)
+        : formatTelegramBothStrategiesReport(
+            pairStats.rsi_bb,
+            pairStats.bj_bot,
+            pairStats.kea_alpha
+          );
 
     const res = await sendTelegramAlert(
       telegramConfig,
@@ -1090,11 +1270,14 @@ export default function App() {
             candles={activeCandles}
             indicators={activeIndicators}
             bjBars={activeBjBars}
+            keaBars={activeKeaBars}
             signals={activeSymbolSignals}
             strategyConfig={strategyConfig}
             onUpdateStrategy={handleUpdateStrategy}
             bjConfig={bjConfig}
             onUpdateBjConfig={handleUpdateBjConfig}
+            keaConfig={keaConfig}
+            onUpdateKeaConfig={handleUpdateKeaConfig}
             timeframe={timeframe}
             exchange={exchange}
             onTimeframeChange={setTimeframe}
@@ -1119,6 +1302,8 @@ export default function App() {
             onUpdateStrategy={handleUpdateStrategy}
             bjConfig={bjConfig}
             onUpdateBjConfig={handleUpdateBjConfig}
+            keaConfig={keaConfig}
+            onUpdateKeaConfig={handleUpdateKeaConfig}
             telegramConfig={telegramConfig}
             onUpdateTelegram={handleUpdateTelegram}
             onSendTestTelegram={handleSendTestTelegram}

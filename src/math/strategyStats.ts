@@ -11,6 +11,7 @@ import {
   CryptoSymbol,
   formatCryptoPrice,
   Indicators,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyId,
   StrategyPairStats,
@@ -18,6 +19,7 @@ import {
 } from '../types/crypto';
 import { calculateATR, computeIndicators } from './indicators';
 import { calculateBjMA } from './bjBot';
+import { computeKeaAlphaSeries, DEFAULT_KEA_CONFIG } from './keaAlpha';
 import {
   get4hTrendAtTimestamp,
   isSignalAllowedBy4hTrend,
@@ -34,7 +36,9 @@ function buildPairStatsSummary(
   const strategyTitle =
     strategyId === 'rsi_bb'
       ? '1. RSI + Полосы Боллинджера'
-      : '2. Bj Bot (3Commas Bot)';
+      : strategyId === 'bj_bot'
+      ? '2. Bj Bot (3Commas Bot)'
+      : '3. KEA-30m (Kalman-Entropy)';
 
   const totalTrades = trades.length;
   const wins = trades.filter((t) => t.isWin);
@@ -506,6 +510,31 @@ export function evaluateBjBotStats30m(
 }
 
 /**
+ * Расчет статистики успешности сделок для Стратегии №3: KEA-30m (Kalman-Entropy Alpha)
+ */
+export function evaluateKeaAlphaStats30m(
+  candles: Candle[],
+  indicators: Indicators[],
+  config: KeaConfig = DEFAULT_KEA_CONFIG,
+  symbol: CryptoSymbol,
+  timeframe: TimeframeId = '30m',
+  trend4hTimeline?: Trend4hTimelinePoint[]
+): StrategyPairStats {
+  if (candles.length < 30 || indicators.length !== candles.length) {
+    return buildPairStatsSummary(symbol, 'kea_alpha', timeframe, []);
+  }
+  const sim = computeKeaAlphaSeries(
+    candles,
+    indicators,
+    { ...config, enabled: true },
+    timeframe,
+    symbol,
+    { trend4hTimeline }
+  );
+  return buildPairStatsSummary(symbol, 'kea_alpha', timeframe, sim.trades);
+}
+
+/**
  * Универсальная функция расчета статистики по свечам 30m
  */
 export function evaluateStrategyStats(
@@ -515,7 +544,8 @@ export function evaluateStrategyStats(
   symbol: CryptoSymbol,
   strategyId: StrategyId,
   timeframe: TimeframeId = '30m',
-  trend4hTimeline?: Trend4hTimelinePoint[]
+  trend4hTimeline?: Trend4hTimelinePoint[],
+  keaConfig: KeaConfig = DEFAULT_KEA_CONFIG
 ): StrategyPairStats {
   const indList = computeIndicators(candles, {
     rsiPeriod: strategyConfig.rsiPeriod,
@@ -528,6 +558,16 @@ export function evaluateStrategyStats(
       candles,
       indList,
       strategyConfig,
+      symbol,
+      timeframe,
+      trend4hTimeline
+    );
+  }
+  if (strategyId === 'kea_alpha') {
+    return evaluateKeaAlphaStats30m(
+      candles,
+      indList,
+      keaConfig,
       symbol,
       timeframe,
       trend4hTimeline
@@ -590,46 +630,63 @@ export function formatTelegramStrategyStatsReport(stats: StrategyPairStats): str
 }
 
 /**
- * Форматирование сравнения обеих стратегий для выбранной валюты (30m) для Telegram
+ * Форматирование сравнения всех стратегий для выбранной валюты (30m) для Telegram
  */
 export function formatTelegramBothStrategiesReport(
   rsiStats: StrategyPairStats,
-  bjStats: StrategyPairStats
+  bjStats: StrategyPairStats,
+  keaStats?: StrategyPairStats
 ): string {
   const rsiSign = rsiStats.totalPnlPercent >= 0 ? '+' : '';
   const bjSign = bjStats.totalPnlPercent >= 0 ? '+' : '';
-  const bestName =
-    rsiStats.winRate >= bjStats.winRate
-      ? '1. RSI + Полосы Боллинджера'
-      : '2. Bj Bot (3Commas Bot)';
+  const candidates = [rsiStats, bjStats, ...(keaStats ? [keaStats] : [])];
+  const leader = [...candidates].sort((a, b) => {
+    if (Math.abs(b.winRate - a.winRate) > 0.5) return b.winRate - a.winRate;
+    return b.totalPnlPercent - a.totalPnlPercent;
+  })[0];
 
-  return [
+  const lines = [
     `⚖️ <b>СРАВНЕНИЕ СТРАТЕГИЙ — ${rsiStats.baseAsset}/USDT (30 МИН)</b>`,
     ``,
     `1️⃣ <b>RSI + Полосы Боллинджера:</b>`,
-    `• Успешность (Win Rate): <b>${rsiStats.winRate.toFixed(1)}%</b> (${rsiStats.winningTrades}W / ${rsiStats.losingTrades}L из ${rsiStats.totalTrades})`,
+    `• Win Rate: <b>${rsiStats.winRate.toFixed(1)}%</b> (${rsiStats.winningTrades}W / ${rsiStats.losingTrades}L из ${rsiStats.totalTrades})`,
     `• Суммарный PnL: <b>${rsiSign}${rsiStats.totalPnlPercent.toFixed(2)}%</b> · PF: ${rsiStats.profitFactor.toFixed(2)}`,
     `• Ср. профит / убыток: +${rsiStats.avgWinPercent.toFixed(2)}% / ${rsiStats.avgLossPercent.toFixed(2)}%`,
     ``,
     `2️⃣ <b>Bj Bot (3Commas Bot):</b>`,
-    `• Успешность (Win Rate): <b>${bjStats.winRate.toFixed(1)}%</b> (${bjStats.winningTrades}W / ${bjStats.losingTrades}L из ${bjStats.totalTrades})`,
+    `• Win Rate: <b>${bjStats.winRate.toFixed(1)}%</b> (${bjStats.winningTrades}W / ${bjStats.losingTrades}L из ${bjStats.totalTrades})`,
     `• Суммарный PnL: <b>${bjSign}${bjStats.totalPnlPercent.toFixed(2)}%</b> · PF: ${bjStats.profitFactor.toFixed(2)}`,
     `• Ср. профит / убыток: +${bjStats.avgWinPercent.toFixed(2)}% / ${bjStats.avgLossPercent.toFixed(2)}%`,
-    ``,
-    `🏆 <b>Лидер по винрейту (30м):</b> ${bestName}`,
-  ].join('\n');
+  ];
+
+  if (keaStats) {
+    const keaSign = keaStats.totalPnlPercent >= 0 ? '+' : '';
+    lines.push(
+      ``,
+      `3️⃣ <b>KEA-30m (Kalman-Entropy Alpha):</b>`,
+      `• Win Rate: <b>${keaStats.winRate.toFixed(1)}%</b> (${keaStats.winningTrades}W / ${keaStats.losingTrades}L из ${keaStats.totalTrades})`,
+      `• Суммарный PnL: <b>${keaSign}${keaStats.totalPnlPercent.toFixed(2)}%</b> · PF: ${keaStats.profitFactor.toFixed(2)}`,
+      `• Ср. профит / убыток: +${keaStats.avgWinPercent.toFixed(2)}% / ${keaStats.avgLossPercent.toFixed(2)}%`
+    );
+  }
+
+  lines.push(``, `🏆 <b>Лидер по статистике (30м):</b> ${leader.strategyTitle}`);
+  return lines.join('\n');
 }
 
 /**
  * Сводка успешности по всем 8 валютам на интервале 30m для Telegram
  */
 export function formatTelegramAllCoinsSummary(
-  rows: { rsi: StrategyPairStats; bj: StrategyPairStats }[]
+  rows: { rsi: StrategyPairStats; bj: StrategyPairStats; kea?: StrategyPairStats }[]
 ): string {
-  const lines = rows.map(({ rsi, bj }) => {
+  const lines = rows.map(({ rsi, bj, kea }) => {
     const rPnl = `${rsi.totalPnlPercent >= 0 ? '+' : ''}${rsi.totalPnlPercent.toFixed(1)}%`;
     const bPnl = `${bj.totalPnlPercent >= 0 ? '+' : ''}${bj.totalPnlPercent.toFixed(1)}%`;
-    return `• <b>${rsi.baseAsset}/USDT</b>\n   1️⃣ RSI+BB: <b>${rsi.winRate.toFixed(0)}%</b> (${rsi.winningTrades}/${rsi.totalTrades}, ${rPnl})\n   2️⃣ Bj Bot: <b>${bj.winRate.toFixed(0)}%</b> (${bj.winningTrades}/${bj.totalTrades}, ${bPnl})`;
+    const kLine = kea
+      ? `\n   3️⃣ KEA-30m: <b>${kea.winRate.toFixed(0)}%</b> (${kea.winningTrades}/${kea.totalTrades}, ${kea.totalPnlPercent >= 0 ? '+' : ''}${kea.totalPnlPercent.toFixed(1)}%)`
+      : '';
+    return `• <b>${rsi.baseAsset}/USDT</b>\n   1️⃣ RSI+BB: <b>${rsi.winRate.toFixed(0)}%</b> (${rsi.winningTrades}/${rsi.totalTrades}, ${rPnl})\n   2️⃣ Bj Bot: <b>${bj.winRate.toFixed(0)}%</b> (${bj.winningTrades}/${bj.totalTrades}, ${bPnl})${kLine}`;
   });
 
   return [

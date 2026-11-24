@@ -11,6 +11,7 @@ import {
   CryptoSymbol,
   formatCryptoPrice,
   Indicators,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyPairStats,
   StrategySignalEvent,
@@ -48,6 +49,8 @@ interface RightControlPanelProps {
   onUpdateStrategy: (cfg: RsiBbStrategyConfig) => void;
   bjConfig: BjBotConfig;
   onUpdateBjConfig: (cfg: BjBotConfig) => void;
+  keaConfig: KeaConfig;
+  onUpdateKeaConfig: (cfg: KeaConfig) => void;
   telegramConfig: TelegramConfig;
   onUpdateTelegram: (cfg: TelegramConfig) => void;
   onSendTestTelegram: () => Promise<void>;
@@ -55,13 +58,16 @@ interface RightControlPanelProps {
   onSendTelegramStatsMenu: () => Promise<void>;
   onSendSelectedStatsTelegram: (
     targetSymbol: CryptoSymbol,
-    mode: 'rsi_bb' | 'bj_bot' | 'both'
+    mode: 'rsi_bb' | 'bj_bot' | 'kea_alpha' | 'both'
   ) => Promise<void>;
   isSendingTelegram: boolean;
   telegramFeedback: { type: 'success' | 'error'; message: string } | null;
   allSignals: StrategySignalEvent[];
   stats30mBySymbol: Partial<
-    Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
+    Record<
+      CryptoSymbol,
+      { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats; kea_alpha?: StrategyPairStats }
+    >
   >;
   trend4hBySymbol?: Partial<Record<CryptoSymbol, Trend4hInfo>>;
   timeframe: TimeframeId;
@@ -86,6 +92,8 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   onUpdateStrategy,
   bjConfig,
   onUpdateBjConfig,
+  keaConfig,
+  onUpdateKeaConfig,
   telegramConfig,
   onUpdateTelegram,
   onSendTestTelegram,
@@ -109,12 +117,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   const [showTgHelp, setShowTgHelp] = useState(false);
   const [isCoinDropdownOpen, setIsCoinDropdownOpen] = useState(false);
   const [expandedStrategyInfo, setExpandedStrategyInfo] = useState<
-    'rsi_bb' | 'bj_bot' | null
+    'rsi_bb' | 'bj_bot' | 'kea_alpha' | null
   >(null);
 
   // Состояние фильтров в разделе «Статистика 30м»
   const [selectedStatsStrategy, setSelectedStatsStrategy] = useState<
-    'rsi_bb' | 'bj_bot' | 'both'
+    'rsi_bb' | 'bj_bot' | 'kea_alpha' | 'both'
   >('rsi_bb');
   const [statsSubView, setStatsSubView] = useState<'all_coins' | 'trades'>('all_coins');
 
@@ -134,6 +142,8 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   const currentSingleStats: StrategyPairStats | undefined =
     selectedStatsStrategy === 'bj_bot'
       ? activePairStats?.bj_bot
+      : selectedStatsStrategy === 'kea_alpha'
+      ? activePairStats?.kea_alpha
       : activePairStats?.rsi_bb;
 
   return (
@@ -608,6 +618,102 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Стратегия №3: KEA-30m (Kalman-Entropy Alpha) */}
+            <div className="rounded-xl border border-slate-200 hover:border-fuchsia-400 transition-colors overflow-hidden">
+              <div className="flex items-center justify-between p-3.5 gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold text-slate-950">
+                      3. KEA-30m (Kalman-Entropy)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedStrategyInfo(
+                          expandedStrategyInfo === 'kea_alpha' ? null : 'kea_alpha'
+                        )
+                      }
+                      className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+                        expandedStrategyInfo === 'kea_alpha'
+                          ? 'bg-slate-950 text-fuchsia-300'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950'
+                      }`}
+                    >
+                      <Info className="w-3 h-3" />
+                      <span>Как работает</span>
+                    </button>
+                  </div>
+                  <div className="text-xs font-mono text-slate-500 mt-0.5">
+                    ER({keaConfig.erPeriod}) ≥{keaConfig.erImpulseThreshold.toFixed(2)} · 24h VWAP Z ±{keaConfig.zScoreEntry.toFixed(1)} · SL ×{keaConfig.atrStopMult.toFixed(2)}
+                  </div>
+
+                  {activePairStats?.kea_alpha && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
+                      <span className="text-slate-600 font-sans">
+                        Успешность 30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-600">
+                          {activePairStats.kea_alpha.winRate.toFixed(1)}%
+                        </strong>{' '}
+                        ({activePairStats.kea_alpha.winningTrades}W /{' '}
+                        {activePairStats.kea_alpha.losingTrades}L)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStatsStrategy('kea_alpha');
+                          setActiveTab('stats30m');
+                        }}
+                        className="text-[11px] font-sans font-semibold text-fuchsia-600 hover:text-fuchsia-800 whitespace-nowrap shrink-0"
+                      >
+                        Статистика 30м →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <input
+                  type="checkbox"
+                  checked={keaConfig.enabled}
+                  onChange={(e) =>
+                    onUpdateKeaConfig({
+                      ...keaConfig,
+                      enabled: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 accent-fuchsia-500 rounded cursor-pointer shrink-0"
+                />
+              </div>
+
+              {expandedStrategyInfo === 'kea_alpha' && (
+                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
+                  <div className="font-semibold text-slate-900">
+                    Математическое ядро для 30м (Адаптивный Калман + Энтропия):
+                  </div>
+                  <p className="leading-relaxed text-slate-600">
+                    Коэффициент фрактальной эффективности Кауфмана (<code>ER</code>) измеряет отношение направленного смещения цены к суммарному шуму и в реальном времени меняет коэффициент усиления 1D фильтра Калмана и режим торговли.
+                  </p>
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-start gap-2">
+                      <span className="px-1.5 py-0.5 rounded bg-fuchsia-600 text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                        IMPULSE
+                      </span>
+                      <span>
+                        <strong>Режим A (ER ≥ {keaConfig.erImpulseThreshold.toFixed(2)}):</strong> пробой линии Калмана после сжатия волатильности Гармана–Класса (<code>GK Ratio</code>) по тренду 4h EMA 200 со скользящим трейлинг-стопом после +{keaConfig.trailAfterR.toFixed(1)}R.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                        Z-REVERT
+                      </span>
+                      <span>
+                        <strong>Режим B (ER ≤ {keaConfig.erRevertThreshold.toFixed(2)}):</strong> статистический возврат к 24ч Rolling VWAP при экстремальном объёмном <code>|Z| ≥ {keaConfig.zScoreEntry.toFixed(1)}</code> и разворотной свече.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -645,22 +751,22 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               <div className="text-[11px] font-semibold text-slate-500 mb-1.5">
                 2. Выберите стратегию
               </div>
-              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('rsi_bb')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'rsi_bb'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
                   }`}
                 >
-                  1. RSI + BB
+                  1. RSI+BB
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('bj_bot')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'bj_bot'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
@@ -670,14 +776,25 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setSelectedStatsStrategy('kea_alpha')}
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                    selectedStatsStrategy === 'kea_alpha'
+                      ? 'bg-slate-950 text-fuchsia-300 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                >
+                  3. KEA-30m
+                </button>
+                <button
+                  type="button"
                   onClick={() => setSelectedStatsStrategy('both')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
                     selectedStatsStrategy === 'both'
                       ? 'bg-slate-950 text-cyan-300 shadow-sm'
                       : 'text-slate-600 hover:text-slate-950'
                   }`}
                 >
-                  Обе сразу
+                  Все 3
                 </button>
               </div>
             </div>
@@ -757,39 +874,41 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             )}
 
-            {/* Режим сравнения обеих стратегий для выбранной валюты */}
+            {/* Режим сравнения всех стратегий для выбранной валюты */}
             {selectedStatsStrategy === 'both' && activePairStats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {[activePairStats.rsi_bb, activePairStats.bj_bot].map((st) => (
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  activePairStats.rsi_bb,
+                  activePairStats.bj_bot,
+                  ...(activePairStats.kea_alpha ? [activePairStats.kea_alpha] : []),
+                ].map((st) => (
                   <div
                     key={st.strategyId}
-                    className="rounded-xl border border-slate-200 p-3 bg-slate-50/60 space-y-1.5 font-mono tabular-nums"
+                    className="rounded-xl border border-slate-200 p-3 bg-slate-50/60 font-mono tabular-nums flex items-center justify-between gap-3"
                   >
-                    <div className="text-xs font-sans font-bold text-slate-900 truncate">
-                      {st.strategyTitle}
+                    <div className="min-w-0">
+                      <div className="text-xs font-sans font-bold text-slate-900 truncate">
+                        {st.strategyTitle}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {st.winningTrades}W / {st.losingTrades}L · PF{' '}
+                        <span className="text-slate-800 font-semibold">
+                          {st.profitFactor.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-lg font-bold text-emerald-600">
-                      {st.winRate.toFixed(1)}%{' '}
-                      <span className="text-[11px] font-normal text-slate-500">
-                        ({st.winningTrades}W/{st.losingTrades}L)
-                      </span>
-                    </div>
-                    <div className="text-xs flex justify-between">
-                      <span className="font-sans text-slate-400">PnL 30м:</span>
-                      <span
-                        className={`font-bold ${
+                    <div className="text-right shrink-0">
+                      <div className="text-base font-bold text-emerald-600">
+                        {st.winRate.toFixed(1)}%
+                      </div>
+                      <div
+                        className={`text-[11px] font-bold ${
                           st.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
                         }`}
                       >
                         {st.totalPnlPercent >= 0 ? '+' : ''}
                         {st.totalPnlPercent.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="text-xs flex justify-between">
-                      <span className="font-sans text-slate-400">PF:</span>
-                      <span className="font-semibold text-slate-800">
-                        {st.profitFactor.toFixed(2)}
-                      </span>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -831,6 +950,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   if (!row) return null;
                   const r = row.rsi_bb;
                   const b = row.bj_bot;
+                  const k = row.kea_alpha;
                   const isSelected = a.symbol === symbol;
 
                   return (
@@ -838,45 +958,68 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       key={a.symbol}
                       type="button"
                       onClick={() => onSelectSymbol(a.symbol)}
-                      className={`w-full py-2.5 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 rounded-lg transition-colors text-left ${
+                      className={`w-full py-2.5 px-2 flex flex-col gap-1 rounded-lg transition-colors text-left ${
                         isSelected ? 'bg-cyan-50/90' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <div className="font-bold text-slate-950 shrink-0">
-                        {a.baseAsset}/USDT
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-950">
+                          {a.baseAsset}/USDT
+                        </span>
+                        <span className="text-[10px] font-sans text-slate-400">
+                          30м Win Rate · PnL
+                        </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                        <div className="sm:text-right">
-                          <span className="text-[10px] font-sans text-slate-400 mr-1">
-                            RSI+BB:
-                          </span>
+                      <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                        <div>
+                          <div className="text-[10px] font-sans text-slate-400">RSI+BB</div>
                           <span className="font-bold text-slate-900">
                             {r.winRate.toFixed(0)}%
                           </span>{' '}
                           <span
-                            className={`text-[11px] ${
+                            className={
                               r.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }`}
+                            }
                           >
-                            ({r.totalPnlPercent >= 0 ? '+' : ''}
-                            {r.totalPnlPercent.toFixed(1)}%)
+                            {r.totalPnlPercent >= 0 ? '+' : ''}
+                            {r.totalPnlPercent.toFixed(1)}%
                           </span>
                         </div>
-                        <div className="text-right">
-                          <span className="text-[10px] font-sans text-slate-400 mr-1">
-                            BjBot:
-                          </span>
+                        <div>
+                          <div className="text-[10px] font-sans text-slate-400">Bj Bot</div>
                           <span className="font-bold text-slate-900">
                             {b.winRate.toFixed(0)}%
                           </span>{' '}
                           <span
-                            className={`text-[11px] ${
+                            className={
                               b.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }`}
+                            }
                           >
-                            ({b.totalPnlPercent >= 0 ? '+' : ''}
-                            {b.totalPnlPercent.toFixed(1)}%)
+                            {b.totalPnlPercent >= 0 ? '+' : ''}
+                            {b.totalPnlPercent.toFixed(1)}%
                           </span>
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-sans text-fuchsia-600 font-semibold">
+                            KEA-30m
+                          </div>
+                          {k ? (
+                            <>
+                              <span className="font-bold text-slate-900">
+                                {k.winRate.toFixed(0)}%
+                              </span>{' '}
+                              <span
+                                className={
+                                  k.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                                }
+                              >
+                                {k.totalPnlPercent >= 0 ? '+' : ''}
+                                {k.totalPnlPercent.toFixed(1)}%
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -1167,6 +1310,15 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   } else if (sig.type === 'BREAKEVEN') {
                     badgeLabel = 'BE 50%';
                     badgeStyle = 'bg-emerald-600 text-white';
+                  } else if (sig.type === 'KEA LONG') {
+                    badgeLabel = 'KEA LONG';
+                    badgeStyle = 'bg-fuchsia-600 text-white';
+                  } else if (sig.type === 'KEA SHORT') {
+                    badgeLabel = 'KEA SHORT';
+                    badgeStyle = 'bg-pink-600 text-white';
+                  } else if (sig.type === 'KEA EXIT') {
+                    badgeLabel = 'KEA EXIT';
+                    badgeStyle = 'bg-yellow-400 text-slate-950';
                   }
 
                   const scoreText =
@@ -1211,7 +1363,14 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-400 mt-0.5">
-                          {sig.strategyName === 'Bj Bot' && sig.stopPrice ? (
+                          {sig.strategyName === 'KEA-30m' ? (
+                            <>
+                              {sig.keaMode === 'Z_REVERT' ? 'VWAP Z' : 'Импульс'} · ER{' '}
+                              {(sig.erValue ?? 0).toFixed(2)} · Z{' '}
+                              {(sig.zScore ?? 0) >= 0 ? '+' : ''}
+                              {(sig.zScore ?? 0).toFixed(2)} ·{' '}
+                            </>
+                          ) : sig.strategyName === 'Bj Bot' && sig.stopPrice ? (
                             <>
                               SL ${formatCryptoPrice(sig.stopPrice, sig.symbol)}
                               {sig.targetPrice

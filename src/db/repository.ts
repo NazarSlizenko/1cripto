@@ -12,6 +12,7 @@ import {
   CRYPTO_ASSETS,
   CryptoSymbol,
   ExchangeId,
+  KeaConfig,
   RsiBbStrategyConfig,
   StrategyId,
   StrategyPairStats,
@@ -19,12 +20,14 @@ import {
   TelegramConfig,
   TimeframeId,
 } from '../types/crypto.ts';
+import { DEFAULT_KEA_CONFIG } from '../math/keaAlpha.ts';
 
 export interface PersistedBotConfigPayload {
   exchange: ExchangeId;
   timeframe: TimeframeId;
   strategyConfig: RsiBbStrategyConfig;
   bjConfig: BjBotConfig;
+  keaConfig?: KeaConfig;
   telegramConfig: TelegramConfig;
 }
 
@@ -37,7 +40,9 @@ function summarizeTradeRows(
   const strategyTitle =
     strategyId === 'rsi_bb'
       ? '1. RSI + Полосы Боллинджера'
-      : '2. Bj Bot (3Commas Bot)';
+      : strategyId === 'bj_bot'
+      ? '2. Bj Bot (3Commas Bot)'
+      : '3. KEA-30m (Kalman-Entropy)';
 
   const mappedTrades: CompletedTradeRecord[] = rows.map((r) => ({
     id: r.tradeKey,
@@ -97,6 +102,19 @@ function summarizeTradeRows(
   };
 }
 
+function extractPersistedConfigs(row: typeof botConfigs.$inferSelect): PersistedBotConfigPayload {
+  const rawStrategy = (row.strategyConfig || {}) as RsiBbStrategyConfig & { __keaConfig?: KeaConfig };
+  const { __keaConfig, ...cleanStrategy } = rawStrategy;
+  return {
+    exchange: row.exchange as ExchangeId,
+    timeframe: row.timeframe as TimeframeId,
+    strategyConfig: cleanStrategy,
+    bjConfig: row.bjConfig,
+    keaConfig: __keaConfig ? { ...DEFAULT_KEA_CONFIG, ...__keaConfig } : DEFAULT_KEA_CONFIG,
+    telegramConfig: row.telegramConfig,
+  };
+}
+
 export async function getUserBotConfig(
   userUid: string
 ): Promise<PersistedBotConfigPayload | null> {
@@ -109,14 +127,7 @@ export async function getUserBotConfig(
       .limit(1);
 
     if (rows.length === 0) return null;
-    const row = rows[0];
-    return {
-      exchange: row.exchange as ExchangeId,
-      timeframe: row.timeframe as TimeframeId,
-      strategyConfig: row.strategyConfig,
-      bjConfig: row.bjConfig,
-      telegramConfig: row.telegramConfig,
-    };
+    return extractPersistedConfigs(rows[0]);
   } catch (error) {
     console.error('Database query failed (getUserBotConfig):', error);
     throw new Error('Database query failed. Please try again later.', {
@@ -135,14 +146,7 @@ export async function getLatestBotConfig(): Promise<PersistedBotConfigPayload | 
       .limit(1);
 
     if (rows.length === 0) return null;
-    const row = rows[0];
-    return {
-      exchange: row.exchange as ExchangeId,
-      timeframe: row.timeframe as TimeframeId,
-      strategyConfig: row.strategyConfig,
-      bjConfig: row.bjConfig,
-      telegramConfig: row.telegramConfig,
-    };
+    return extractPersistedConfigs(rows[0]);
   } catch (error) {
     console.error('Database query failed (getLatestBotConfig):', error);
     throw new Error('Database query failed. Please try again later.', {
@@ -157,13 +161,18 @@ export async function upsertUserBotConfig(
 ): Promise<void> {
   if (!isDatabaseConfigured()) return;
   try {
+    const packedStrategyConfig = {
+      ...payload.strategyConfig,
+      ...(payload.keaConfig ? { __keaConfig: payload.keaConfig } : {}),
+    } as RsiBbStrategyConfig;
+
     await db
       .insert(botConfigs)
       .values({
         userUid,
         exchange: payload.exchange,
         timeframe: payload.timeframe,
-        strategyConfig: payload.strategyConfig,
+        strategyConfig: packedStrategyConfig,
         bjConfig: payload.bjConfig,
         telegramConfig: payload.telegramConfig,
         updatedAt: new Date(),
@@ -173,7 +182,7 @@ export async function upsertUserBotConfig(
         set: {
           exchange: payload.exchange,
           timeframe: payload.timeframe,
-          strategyConfig: payload.strategyConfig,
+          strategyConfig: packedStrategyConfig,
           bjConfig: payload.bjConfig,
           telegramConfig: payload.telegramConfig,
           updatedAt: new Date(),
@@ -222,18 +231,24 @@ export async function saveCompletedTrades30m(
   }
 }
 
+export type Symbol30mStatsBundle = {
+  rsi_bb: StrategyPairStats;
+  bj_bot: StrategyPairStats;
+  kea_alpha: StrategyPairStats;
+};
+
 export async function getAll30mStatsFromDb(): Promise<
-  Partial<Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>>
+  Partial<Record<CryptoSymbol, Symbol30mStatsBundle>>
 > {
   if (!isDatabaseConfigured()) return {};
   try {
-    // Ограничиваем выборку последними 1600 записями для экономии RAM (512 MB Render)
+    // Ограничиваем выборку последними 2400 записями для экономии RAM (512 MB Render)
     const rows = await db
       .select()
       .from(trades)
       .where(eq(trades.timeframe, '30m'))
       .orderBy(desc(trades.exitTimestamp))
-      .limit(1600);
+      .limit(2400);
 
     const grouped: Record<string, (typeof trades.$inferSelect)[]> = {};
     for (const r of rows) {
@@ -242,17 +257,17 @@ export async function getAll30mStatsFromDb(): Promise<
       grouped[key].push(r);
     }
 
-    const result: Partial<
-      Record<CryptoSymbol, { rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }>
-    > = {};
+    const result: Partial<Record<CryptoSymbol, Symbol30mStatsBundle>> = {};
 
     for (const asset of CRYPTO_ASSETS) {
       const rsiRows = grouped[`${asset.symbol}:rsi_bb`] || [];
       const bjRows = grouped[`${asset.symbol}:bj_bot`] || [];
-      if (rsiRows.length > 0 || bjRows.length > 0) {
+      const keaRows = grouped[`${asset.symbol}:kea_alpha`] || [];
+      if (rsiRows.length > 0 || bjRows.length > 0 || keaRows.length > 0) {
         result[asset.symbol] = {
           rsi_bb: summarizeTradeRows(asset.symbol, 'rsi_bb', rsiRows),
           bj_bot: summarizeTradeRows(asset.symbol, 'bj_bot', bjRows),
+          kea_alpha: summarizeTradeRows(asset.symbol, 'kea_alpha', keaRows),
         };
       }
     }
@@ -268,15 +283,16 @@ export async function getAll30mStatsFromDb(): Promise<
 
 export async function getPairStats30mFromDb(
   symbol: CryptoSymbol
-): Promise<{ rsi_bb: StrategyPairStats; bj_bot: StrategyPairStats }> {
+): Promise<Symbol30mStatsBundle> {
   if (!isDatabaseConfigured()) {
     return {
       rsi_bb: summarizeTradeRows(symbol, 'rsi_bb', []),
       bj_bot: summarizeTradeRows(symbol, 'bj_bot', []),
+      kea_alpha: summarizeTradeRows(symbol, 'kea_alpha', []),
     };
   }
   try {
-    const [rsiRows, bjRows] = await Promise.all([
+    const [rsiRows, bjRows, keaRows] = await Promise.all([
       db
         .select()
         .from(trades)
@@ -301,11 +317,24 @@ export async function getPairStats30mFromDb(
         )
         .orderBy(desc(trades.exitTimestamp))
         .limit(300),
+      db
+        .select()
+        .from(trades)
+        .where(
+          and(
+            eq(trades.symbol, symbol),
+            eq(trades.strategyId, 'kea_alpha'),
+            eq(trades.timeframe, '30m')
+          )
+        )
+        .orderBy(desc(trades.exitTimestamp))
+        .limit(300),
     ]);
 
     return {
       rsi_bb: summarizeTradeRows(symbol, 'rsi_bb', rsiRows),
       bj_bot: summarizeTradeRows(symbol, 'bj_bot', bjRows),
+      kea_alpha: summarizeTradeRows(symbol, 'kea_alpha', keaRows),
     };
   } catch (error) {
     console.error('Database query failed (getPairStats30mFromDb):', error);

@@ -224,6 +224,37 @@ export interface BjBotBarPoint {
   breakevenTriggered?: boolean;
 }
 
+export interface KeaConfig {
+  enabled: boolean;
+  erPeriod: number;
+  vwapPeriod: number;
+  erImpulseThreshold: number;
+  erRevertThreshold: number;
+  zScoreEntry: number;
+  atrStopMult: number;
+  trailAfterR: number;
+  use4hTrendFilter: boolean;
+  enableImpulseMode: boolean;
+  enableRevertMode: boolean;
+}
+
+export type KeaSignalType = 'KEA LONG' | 'KEA SHORT' | 'KEA EXIT';
+export type KeaModeType = 'IMPULSE' | 'Z_REVERT';
+
+export interface KeaBarPoint {
+  kalman: number;
+  vwap: number;
+  er: number;
+  zScore: number;
+  gkVolRatio: number;
+  regime: 'IMPULSE' | 'REVERT' | 'NEUTRAL';
+  entryPrice: number | null;
+  stopPrice: number | null;
+  targetPrice: number | null;
+  signal: KeaSignalType | null;
+  signalMode?: KeaModeType;
+}
+
 export type StrategySignalType =
   | 'OVERSOLD_BUY'
   | 'OVERBOUGHT_SELL'
@@ -231,11 +262,14 @@ export type StrategySignalType =
   | 'SHORT'
   | 'L EXIT'
   | 'S EXIT'
-  | 'BREAKEVEN';
+  | 'BREAKEVEN'
+  | 'KEA LONG'
+  | 'KEA SHORT'
+  | 'KEA EXIT';
 
 export interface StrategySignalEvent {
   id: string;
-  strategyName: 'RSI+BB' | 'Bj Bot';
+  strategyName: 'RSI+BB' | 'Bj Bot' | 'KEA-30m';
   symbol: CryptoSymbol;
   baseAsset: string;
   timestamp: number;
@@ -254,6 +288,10 @@ export interface StrategySignalEvent {
   trend4h?: Trend4hDirection;
   volumeRatio?: number;
   bbWidth?: number;
+  keaMode?: KeaModeType;
+  erValue?: number;
+  zScore?: number;
+  gkVolRatio?: number;
   timeframe: TimeframeId;
   telegramSent: boolean;
   telegramError?: string;
@@ -270,7 +308,7 @@ export interface TelegramConfig {
 export type ExchangeId = 'binance' | 'coinbase' | 'kraken' | 'coingecko';
 export type TimeframeId = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
-export type StrategyId = 'rsi_bb' | 'bj_bot';
+export type StrategyId = 'rsi_bb' | 'bj_bot' | 'kea_alpha';
 
 export interface CompletedTradeRecord {
   id: string;
