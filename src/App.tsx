@@ -53,6 +53,7 @@ import {
 } from './services/telegramService';
 import { InteractiveChart } from './components/InteractiveChart';
 import { RightControlPanel } from './components/RightControlPanel';
+import { LogIn, LogOut } from 'lucide-react';
 
 const SYNC_INTERVAL_MS = 10000;
 const TREND_4H_INTERVAL_MS = 45 * 60 * 1000;
@@ -109,7 +110,7 @@ const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
 
 export default function App() {
   const [symbol, setSymbol] = useState<CryptoSymbol>('BTCUSDT');
-  const [exchange, setExchange] = useState<ExchangeId>('binance');
+  const exchange: ExchangeId = 'binance';
   const [timeframe, setTimeframe] = useState<TimeframeId>('30m');
 
   // Свечи по всем криптовалютам для одновременного поиска сигналов
@@ -1249,21 +1250,108 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060d1f] text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
-      {/* Subtle Ambient Cyan Glow */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed -top-36 left-1/4 w-[620px] h-[320px] rounded-full bg-cyan-500/10 blur-[130px]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed bottom-0 right-10 w-[480px] h-[280px] rounded-full bg-blue-500/10 blur-[120px]"
-      />
+    <div className="min-h-screen bg-[#090B0E] text-slate-100 flex flex-col font-sans overflow-x-hidden">
+      {/* Верхняя панель терминала: бренд, выбор биржи и профиль */}
+      <header className="border-b border-white/[0.08] bg-[#0B0E14]">
+        <div className="max-w-[1680px] mx-auto px-3 sm:px-6 h-13 flex items-center justify-between gap-4 sm:gap-8">
+          <div className="flex items-center gap-4">
+            <div className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0">
+              QuantCrypto
+            </div>
+            <span className="px-2 py-0.5 rounded bg-[#141820] border border-white/[0.08] text-[11px] font-medium text-amber-400 whitespace-nowrap">
+              Binance Spot
+            </span>
+          </div>
 
-      {/* Модульная двухколоночная сетка */}
-      <main className="relative z-10 flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-6 py-3 sm:py-5 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+          <div className="flex items-center gap-3 shrink-0">
+            {isAuthLoading ? (
+              <span className="text-xs text-slate-500 whitespace-nowrap">Профиль...</span>
+            ) : authUser ? (
+              <div className="flex items-center gap-2.5">
+                <span className="hidden md:inline text-xs text-slate-400 truncate max-w-[180px]">
+                  {authUser.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSignOutGoogle}
+                  className="px-3 py-1.5 rounded-lg border border-white/[0.1] bg-[#141820] hover:bg-[#1B202B] text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Выйти</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSignInGoogle}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-white text-slate-950 text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Войти через Google</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Лента быстрого переключения 8 криптовалют */}
+      <div className="border-b border-white/[0.06] bg-[#0D1017]">
+        <div className="max-w-[1680px] mx-auto px-3 sm:px-6 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {CRYPTO_ASSETS.map((asset) => {
+            const cList = candlesBySymbol[asset.symbol];
+            const lastBar = cList && cList.length > 0 ? cList[cList.length - 1] : null;
+            const prevBar =
+              cList && cList.length > 1
+                ? cList[Math.max(0, cList.length - 25)] || cList[0]
+                : null;
+            const displayPrice =
+              asset.symbol === symbol && spotTicker.price > 0
+                ? spotTicker.price
+                : lastBar?.close || asset.seedPrice;
+            const pct =
+              asset.symbol === symbol && spotTicker.price > 0
+                ? spotTicker.changePercent24h
+                : lastBar && prevBar && prevBar.close > 0
+                ? ((lastBar.close - prevBar.close) / prevBar.close) * 100
+                : 0;
+            const isSelected = asset.symbol === symbol;
+            const isUp = pct >= 0;
+
+            return (
+              <button
+                key={asset.symbol}
+                type="button"
+                onClick={() => setSymbol(asset.symbol)}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors whitespace-nowrap shrink-0 border ${
+                  isSelected
+                    ? 'bg-[#171C26] border-sky-400/50 text-white'
+                    : 'bg-transparent border-transparent hover:bg-white/[0.04] text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span className={`font-semibold ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                  {asset.baseAsset}
+                </span>
+                <span className="font-mono tabular-nums text-[11px] text-slate-300">
+                  ${formatCryptoPrice(displayPrice, asset.symbol)}
+                </span>
+                <span
+                  className={`font-mono tabular-nums text-[11px] font-medium ${
+                    isUp ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {isUp ? '+' : ''}
+                  {pct.toFixed(1)}%
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Основная рабочая сетка терминала */}
+      <main className="flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* ЛЕВАЯ КОЛОНКА: Интерактивный график */}
-        <div className="lg:col-span-8 lg:sticky lg:top-5 min-w-0">
+        <div className="lg:col-span-8 lg:sticky lg:top-4 min-w-0">
           <InteractiveChart
             symbol={symbol}
             onSymbolChange={setSymbol}
@@ -1279,13 +1367,11 @@ export default function App() {
             keaConfig={keaConfig}
             onUpdateKeaConfig={handleUpdateKeaConfig}
             timeframe={timeframe}
-            exchange={exchange}
             onTimeframeChange={setTimeframe}
-            onExchangeChange={setExchange}
           />
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА: Чистые белые панели */}
+        {/* ПРАВАЯ КОЛОНКА: Аналитика, стратегии, статистика и Telegram-управление */}
         <div className="lg:col-span-4 flex flex-col min-w-0">
           <RightControlPanel
             symbol={symbol}
@@ -1316,10 +1402,6 @@ export default function App() {
             stats30mBySymbol={stats30mBySymbol}
             trend4hBySymbol={trend4hLatestBySymbol}
             timeframe={timeframe}
-            userEmail={authUser?.email || null}
-            isAuthLoading={isAuthLoading}
-            onSignInGoogle={handleSignInGoogle}
-            onSignOutGoogle={handleSignOutGoogle}
           />
         </div>
       </main>

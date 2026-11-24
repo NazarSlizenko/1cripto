@@ -216,7 +216,7 @@ async function hydrateStateFromDbOnce(): Promise<void> {
     if (latestCfg) {
       botState = {
         ...botState,
-        exchange: latestCfg.exchange,
+        exchange: 'binance',
         timeframe: latestCfg.timeframe,
         strategyConfig: { ...botState.strategyConfig, ...latestCfg.strategyConfig },
         bjConfig: { ...botState.bjConfig, ...latestCfg.bjConfig },
@@ -630,7 +630,7 @@ async function startServer() {
       if (userCfg) {
         botState = {
           ...botState,
-          exchange: userCfg.exchange,
+          exchange: 'binance',
           timeframe: userCfg.timeframe,
           strategyConfig: { ...botState.strategyConfig, ...userCfg.strategyConfig },
           bjConfig: { ...botState.bjConfig, ...userCfg.bjConfig },

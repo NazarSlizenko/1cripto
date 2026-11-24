@@ -11,7 +11,6 @@ import {
   Candle,
   CRYPTO_ASSETS,
   CryptoSymbol,
-  ExchangeId,
   formatCryptoPrice,
   Indicators,
   KeaBarPoint,
@@ -30,6 +29,7 @@ import {
   X,
   ChevronDown,
   Clock,
+  HelpCircle,
 } from 'lucide-react';
 
 interface InteractiveChartProps {
@@ -47,9 +47,7 @@ interface InteractiveChartProps {
   keaConfig: KeaConfig;
   onUpdateKeaConfig: (cfg: KeaConfig) => void;
   timeframe: TimeframeId;
-  exchange: ExchangeId;
   onTimeframeChange: (tf: TimeframeId) => void;
-  onExchangeChange: (ex: ExchangeId) => void;
 }
 
 const TIMEFRAMES: { id: TimeframeId; label: string }[] = [
@@ -60,12 +58,6 @@ const TIMEFRAMES: { id: TimeframeId; label: string }[] = [
   { id: '1h', label: '1ч' },
   { id: '4h', label: '4ч' },
   { id: '1d', label: '1д' },
-];
-
-const EXCHANGES: { id: ExchangeId; label: string }[] = [
-  { id: 'binance', label: 'Binance' },
-  { id: 'coinbase', label: 'Coinbase' },
-  { id: 'kraken', label: 'Kraken' },
 ];
 
 const BJ_MA_TYPES: BjMaType[] = [
@@ -97,9 +89,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   keaConfig,
   onUpdateKeaConfig,
   timeframe,
-  exchange,
   onTimeframeChange,
-  onExchangeChange,
 }) => {
   // Индикаторы на основном графике
   const [showBB, setShowBB] = useState(true);
@@ -119,6 +109,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   const [expandedSettingsId, setExpandedSettingsId] = useState<
     'bb' | 'bj' | 'rsi' | 'kea' | null
   >(null);
+  const [showLegendHelp, setShowLegendHelp] = useState(false);
 
   // Масштабирование оси цены: А (Автофит) и Л (Логарифмическая шкала)
   const [isAutoScale, setIsAutoScale] = useState(true);
@@ -156,7 +147,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     setPriceScaleStretch(1.0);
     setPriceVerticalPan(0.0);
     setIsAutoScale(true);
-  }, [timeframe, exchange, symbol]);
+  }, [timeframe, symbol]);
 
   const maxVisible = Math.max(20, candles.length);
   const clampedVisibleCount = Math.min(maxVisible, Math.max(20, visibleCount));
@@ -383,7 +374,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
 
   if (visibleCandles.length === 0) {
     return (
-      <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl h-[360px] sm:h-[520px] flex items-center justify-center text-slate-400 text-sm">
+      <div className="bg-[#11151D] border border-white/[0.08] rounded-xl h-[360px] sm:h-[520px] flex items-center justify-center text-slate-400 text-sm">
         Загрузка графика {symbol}...
       </div>
     );
@@ -558,45 +549,47 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     1;
 
   return (
-    <div className="bg-[#0a1329]/85 backdrop-blur-xl border border-cyan-400/20 rounded-2xl shadow-[0_20px_50px_-15px_rgba(0,240,255,0.12)] flex flex-col relative">
-      {/* Верхняя панель: Выпадающее меню криптовалюты, Интервалы, Биржа и выпадающее меню «Индикаторы» */}
-      <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-cyan-400/15 flex flex-wrap items-center justify-between gap-2 bg-[#070e22]/90 rounded-t-2xl relative z-30">
+    <div className="bg-[#11151D] border border-white/[0.08] rounded-xl flex flex-col relative">
+      {/* Верхняя панель: Выпадающее меню криптовалюты, Таймфреймы, мобильные Биржи и Индикаторы */}
+      <div className="px-3 sm:px-4 py-2.5 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2 bg-[#0E1219] rounded-t-xl relative z-30">
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 max-w-full">
           {/* Выпадающее меню выбора криптовалюты по клику */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => {
                 setIsCryptoMenuOpen((prev) => !prev);
                 setIsIndicatorsMenuOpen(false);
               }}
-              className="px-3 py-1.5 rounded-xl bg-white text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-cyan-50 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-lg bg-[#171C26] hover:bg-[#1E2532] border border-white/[0.1] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
               <span>{activeAsset.baseAsset}/USDT</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
             {isCryptoMenuOpen && (
-              <div className="absolute left-0 mt-2 w-56 bg-white text-slate-900 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.55)] border border-slate-200 p-2 z-50 space-y-1">
+              <div className="absolute left-0 mt-1.5 w-56 bg-[#161B24] text-slate-200 rounded-xl shadow-2xl border border-white/[0.12] p-1.5 z-50 space-y-0.5">
                 {CRYPTO_ASSETS.map((asset) => (
                   <button
                     key={asset.symbol}
+                    type="button"
                     onClick={() => {
                       onSymbolChange(asset.symbol);
                       setIsCryptoMenuOpen(false);
                     }}
-                    className={`w-full px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                    className={`w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-colors border ${
                       symbol === asset.symbol
-                        ? 'bg-slate-950 text-cyan-300 font-bold'
-                        : 'hover:bg-slate-100 text-slate-800 font-medium'
+                        ? 'bg-[#222936] text-white font-semibold border-sky-400/30'
+                        : 'hover:bg-white/[0.04] text-slate-300 font-medium border-transparent'
                     }`}
                   >
                     <div>
-                      <span className="font-bold">{asset.baseAsset}/USDT</span>
-                      <span className="text-[11px] opacity-70 ml-1.5">
+                      <span className="font-semibold">{asset.baseAsset}/USDT</span>
+                      <span className="text-[11px] text-slate-400 ml-1.5">
                         {asset.name}
                       </span>
                     </div>
-                    {symbol === asset.symbol && <Check className="w-3.5 h-3.5" />}
+                    {symbol === asset.symbol && <Check className="w-3.5 h-3.5 text-sky-400" />}
                   </button>
                 ))}
               </div>
@@ -604,15 +597,16 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </div>
 
           {/* Таймфреймы */}
-          <div className="flex items-center gap-0.5 bg-[#0d1936] border border-cyan-400/20 rounded-xl p-1 overflow-x-auto max-w-full">
+          <div className="flex items-center gap-0.5 bg-[#0B0E14] border border-white/[0.07] rounded-lg p-1 overflow-x-auto no-scrollbar max-w-full">
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf.id}
+                type="button"
                 onClick={() => onTimeframeChange(tf.id)}
-                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold rounded-lg transition-all whitespace-nowrap shrink-0 ${
+                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   timeframe === tf.id
-                    ? 'bg-cyan-400 text-slate-950 shadow-[0_0_16px_rgba(34,211,238,0.45)]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    ? 'bg-[#222936] text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                 }`}
               >
                 {tf.label}
@@ -620,61 +614,52 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             ))}
           </div>
 
-          {/* Биржи */}
-          <div className="flex items-center gap-0.5 bg-[#0d1936] border border-white/10 rounded-xl p-1">
-            {EXCHANGES.map((ex) => (
-              <button
-                key={ex.id}
-                onClick={() => onExchangeChange(ex.id)}
-                className={`px-2 py-1 sm:py-1.5 text-[11px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                  exchange === ex.id
-                    ? 'bg-white/15 text-white font-semibold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {ex.label}
-              </button>
-            ))}
-          </div>
+          {/* Биржа (фиксирована Binance на мобильных экранах) */}
+          <span className="sm:hidden px-2.5 py-1 text-[11px] font-medium text-amber-300 bg-[#0B0E14] border border-white/[0.07] rounded-lg whitespace-nowrap shrink-0">
+            Binance
+          </span>
         </div>
 
-        {/* Выпадающее меню «Индикаторы» (компактное, без обрезания) */}
+        {/* Выпадающее меню «Индикаторы» */}
         <div className="relative ml-auto">
           <button
+            type="button"
             onClick={() => {
               setIsIndicatorsMenuOpen((prev) => !prev);
               setIsCryptoMenuOpen(false);
             }}
-            className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
               isIndicatorsMenuOpen
-                ? 'bg-cyan-400 text-slate-950 border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.4)]'
-                : 'bg-[#0d1936] border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/10'
+                ? 'bg-[#222936] text-white border-sky-400/40'
+                : 'bg-[#171C26] border-white/[0.1] text-slate-200 hover:bg-[#1E2532]'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
+            <Layers className="w-3.5 h-3.5 text-sky-400" />
             <span>Индикаторы ({activeIndicatorsCount})</span>
-            <ChevronDown className="w-3.5 h-3.5" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
 
           {isIndicatorsMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] bg-white text-slate-900 rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.65)] border border-slate-200 p-3 z-50 space-y-2 max-h-[420px] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                <span className="text-xs font-bold text-slate-900">
-                  Индикаторы
+            <div className="absolute right-0 top-full mt-1.5 w-[min(21rem,calc(100vw-2rem))] bg-[#161B24] text-slate-200 rounded-xl shadow-2xl border border-white/[0.12] p-3 z-50 space-y-2 max-h-[440px] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                <span className="text-xs font-semibold text-white">
+                  Индикаторы и слои
                 </span>
                 <button
+                  type="button"
                   onClick={() => setIsIndicatorsMenuOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.06]"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               <div className="space-y-1.5 text-xs">
-                {/* 1. 3Commas Bot / Bj Bot + настройки прямо в строке индикатора */}
-                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                {/* 1. Bj Bot */}
+                <div className="rounded-lg border border-white/[0.07] bg-[#0B0E14] p-2">
                   <div className="flex items-center justify-between gap-2">
                     <button
+                      type="button"
                       onClick={() => {
                         const next = !showBjBot;
                         setShowBjBot(next);
@@ -683,30 +668,33 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       className="flex-1 flex items-center gap-2 text-left"
                     >
                       <span
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
-                          showBjBot ? 'bg-cyan-500 text-white' : 'border border-slate-300 bg-white'
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${
+                          showBjBot
+                            ? 'bg-sky-500 text-slate-950'
+                            : 'border border-white/20 bg-[#161B24]'
                         }`}
                       >
                         {showBjBot && <Check className="w-3 h-3" />}
                       </span>
                       <div>
-                        <div className="font-semibold text-slate-800">
+                        <div className="font-semibold text-slate-100">
                           Bj Bot (3Commas Bot)
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] font-mono text-slate-400">
                           {bjConfig.maType1}({bjConfig.maLength1}) × {bjConfig.maType2}({bjConfig.maLength2}) · R:R {bjConfig.rnr}
                         </div>
                       </div>
                     </button>
 
                     <button
+                      type="button"
                       onClick={() =>
                         setExpandedSettingsId(expandedSettingsId === 'bj' ? null : 'bj')
                       }
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`p-1.5 rounded-md transition-colors ${
                         expandedSettingsId === 'bj'
-                          ? 'bg-slate-900 text-cyan-300'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                          ? 'bg-[#222936] text-sky-400'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
                       }`}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
@@ -714,10 +702,10 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   </div>
 
                   {expandedSettingsId === 'bj' && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2.5">
+                    <div className="mt-2.5 pt-2.5 border-t border-white/[0.07] space-y-2.5">
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">
+                          <label className="block text-[10px] text-slate-400 mb-0.5">
                             Тип MA #1
                           </label>
                           <select
@@ -728,7 +716,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 maType1: e.target.value as BjMaType,
                               })
                             }
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800"
+                            className="w-full bg-[#161B24] border border-white/[0.12] rounded-md px-2 py-1 text-xs font-medium text-slate-100 outline-none focus:border-sky-400"
                           >
                             {BJ_MA_TYPES.map((t) => (
                               <option key={t} value={t}>
@@ -738,7 +726,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">
+                          <label className="block text-[10px] text-slate-400 mb-0.5">
                             Длина MA #1 ({bjConfig.maLength1})
                           </label>
                           <input
@@ -752,14 +740,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 maLength1: Number(e.target.value),
                               })
                             }
-                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer mt-2"
+                            className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer mt-2"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">
+                          <label className="block text-[10px] text-slate-400 mb-0.5">
                             Тип MA #2
                           </label>
                           <select
@@ -770,7 +758,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 maType2: e.target.value as BjMaType,
                               })
                             }
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800"
+                            className="w-full bg-[#161B24] border border-white/[0.12] rounded-md px-2 py-1 text-xs font-medium text-slate-100 outline-none focus:border-sky-400"
                           >
                             {BJ_MA_TYPES.map((t) => (
                               <option key={t} value={t}>
@@ -780,7 +768,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">
+                          <label className="block text-[10px] text-slate-400 mb-0.5">
                             Длина MA #2 ({bjConfig.maLength2})
                           </label>
                           <input
@@ -794,16 +782,16 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 maLength2: Number(e.target.value),
                               })
                             }
-                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer mt-2"
+                            className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer mt-2"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                             <span>R:R (Тейк)</span>
-                            <span className="font-mono font-bold">{bjConfig.rnr.toFixed(1)}</span>
+                            <span className="font-mono font-semibold text-slate-200">{bjConfig.rnr.toFixed(1)}</span>
                           </div>
                           <input
                             type="range"
@@ -817,14 +805,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 rnr: Number(e.target.value),
                               })
                             }
-                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                            className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                           />
                         </div>
 
                         <div>
-                          <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                             <span>Risk ATR</span>
-                            <span className="font-mono font-bold">{bjConfig.riskM.toFixed(1)}</span>
+                            <span className="font-mono font-semibold text-slate-200">{bjConfig.riskM.toFixed(1)}</span>
                           </div>
                           <input
                             type="range"
@@ -838,13 +826,13 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 riskM: Number(e.target.value),
                               })
                             }
-                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                            className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                           />
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between pt-1">
-                        <label className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={bjConfig.trailStop}
@@ -854,12 +842,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 trailStop: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                           <span>ATR Трейлинг-стоп</span>
                         </label>
 
-                        <label className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={bjConfig.flip}
@@ -869,14 +857,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 flip: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                           <span>Реверс (Flip)</span>
                         </label>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-200/70 space-y-2">
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                      <div className="pt-2 border-t border-white/[0.07] space-y-2">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Фильтр тренда 4h EMA 200</span>
                           <input
                             type="checkbox"
@@ -887,11 +875,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 use4hTrendFilter: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Анти-флэт фильтр (BBW)</span>
                           <input
                             type="checkbox"
@@ -902,15 +890,15 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 useFlatFilter: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                         </label>
 
                         {(bjConfig.useFlatFilter ?? true) && (
                           <div>
-                            <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                            <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                               <span>Мин. ширина полос BBW</span>
-                              <span className="font-mono font-bold">
+                              <span className="font-mono font-semibold text-slate-200">
                                 {(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%
                               </span>
                             </div>
@@ -926,7 +914,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                   minBbWidth: Number(e.target.value),
                                 })
                               }
-                              className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                              className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                             />
                           </div>
                         )}
@@ -935,38 +923,42 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   )}
                 </div>
 
-                {/* 2. Полосы Боллинджера + встроенная кнопка настроек */}
-                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                {/* 2. Полосы Боллинджера */}
+                <div className="rounded-lg border border-white/[0.07] bg-[#0B0E14] p-2">
                   <div className="flex items-center justify-between gap-2">
                     <button
+                      type="button"
                       onClick={() => setShowBB(!showBB)}
                       className="flex-1 flex items-center gap-2 text-left"
                     >
                       <span
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
-                          showBB ? 'bg-cyan-500 text-white' : 'border border-slate-300 bg-white'
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${
+                          showBB
+                            ? 'bg-sky-500 text-slate-950'
+                            : 'border border-white/20 bg-[#161B24]'
                         }`}
                       >
                         {showBB && <Check className="w-3 h-3" />}
                       </span>
                       <div>
-                        <div className="font-semibold text-slate-800">
+                        <div className="font-semibold text-slate-100">
                           Полосы Боллинджера (BB)
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] font-mono text-slate-400">
                           Период {strategyConfig.bbPeriod}, откл. {strategyConfig.bbStdDev.toFixed(1)}σ
                         </div>
                       </div>
                     </button>
 
                     <button
+                      type="button"
                       onClick={() =>
                         setExpandedSettingsId(expandedSettingsId === 'bb' ? null : 'bb')
                       }
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`p-1.5 rounded-md transition-colors ${
                         expandedSettingsId === 'bb'
-                          ? 'bg-slate-900 text-cyan-300'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                          ? 'bg-[#222936] text-sky-400'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
                       }`}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
@@ -974,11 +966,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   </div>
 
                   {expandedSettingsId === 'bb' && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
+                    <div className="mt-2.5 pt-2.5 border-t border-white/[0.07] space-y-2">
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Период SMA:</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">Период SMA:</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             {strategyConfig.bbPeriod}
                           </span>
                         </div>
@@ -994,14 +986,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               bbPeriod: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Отклонение σ:</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">Отклонение σ:</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             {strategyConfig.bbStdDev.toFixed(1)}σ
                           </span>
                         </div>
@@ -1017,47 +1009,49 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               bbStdDev: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* 3. RSI + встроенная кнопка настроек */}
-                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                {/* 3. RSI */}
+                <div className="rounded-lg border border-white/[0.07] bg-[#0B0E14] p-2">
                   <div className="flex items-center justify-between gap-2">
                     <button
+                      type="button"
                       onClick={() => setSubChart('rsi')}
                       className="flex-1 flex items-center gap-2 text-left"
                     >
                       <span
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${
                           subChart === 'rsi'
-                            ? 'bg-cyan-500 text-white'
-                            : 'border border-slate-300 bg-white'
+                            ? 'bg-sky-500 text-slate-950'
+                            : 'border border-white/20 bg-[#161B24]'
                         }`}
                       >
                         {subChart === 'rsi' && <Check className="w-3 h-3" />}
                       </span>
                       <div>
-                        <div className="font-semibold text-slate-800">
+                        <div className="font-semibold text-slate-100">
                           RSI ({strategyConfig.rsiPeriod})
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] font-mono text-slate-400">
                           Уровни ≤{strategyConfig.rsiOversold} / ≥{strategyConfig.rsiOverbought}
                         </div>
                       </div>
                     </button>
 
                     <button
+                      type="button"
                       onClick={() =>
                         setExpandedSettingsId(expandedSettingsId === 'rsi' ? null : 'rsi')
                       }
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`p-1.5 rounded-md transition-colors ${
                         expandedSettingsId === 'rsi'
-                          ? 'bg-slate-900 text-cyan-300'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                          ? 'bg-[#222936] text-sky-400'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
                       }`}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
@@ -1065,11 +1059,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   </div>
 
                   {expandedSettingsId === 'rsi' && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
+                    <div className="mt-2.5 pt-2.5 border-t border-white/[0.07] space-y-2">
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Перепроданность (BUY):</span>
-                          <span className="font-mono font-bold text-emerald-600">
+                          <span className="text-slate-400">Перепроданность (BUY):</span>
+                          <span className="font-mono font-semibold text-emerald-400">
                             ≤ {strategyConfig.rsiOversold}
                           </span>
                         </div>
@@ -1085,14 +1079,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               rsiOversold: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Перекупленность (SELL):</span>
-                          <span className="font-mono font-bold text-rose-600">
+                          <span className="text-slate-400">Перекупленность (SELL):</span>
+                          <span className="font-mono font-semibold text-rose-400">
                             ≥ {strategyConfig.rsiOverbought}
                           </span>
                         </div>
@@ -1108,14 +1102,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               rsiOverbought: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Период RSI:</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">Период RSI:</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             {strategyConfig.rsiPeriod}
                           </span>
                         </div>
@@ -1131,12 +1125,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               rsiPeriod: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
-                      <div className="pt-2 border-t border-slate-200/70 space-y-2">
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                      <div className="pt-2 border-t border-white/[0.07] space-y-2">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Разворотная свеча (анти-спам)</span>
                           <input
                             type="checkbox"
@@ -1147,11 +1141,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 requireReversalCandle: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Фильтр тренда 4h EMA 200</span>
                           <input
                             type="checkbox"
@@ -1162,14 +1156,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 use4hTrendFilter: e.target.checked,
                               })
                             }
-                            className="accent-cyan-500 rounded"
+                            className="accent-sky-400 rounded"
                           />
                         </label>
 
                         <div>
-                          <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                             <span>Пауза между входами (свечи)</span>
-                            <span className="font-mono font-bold">
+                            <span className="font-mono font-semibold text-slate-200">
                               {strategyConfig.cooldownBars ?? 4}
                             </span>
                           </div>
@@ -1185,7 +1179,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 cooldownBars: Number(e.target.value),
                               })
                             }
-                            className="w-full accent-cyan-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                            className="w-full accent-sky-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                           />
                         </div>
                       </div>
@@ -1193,10 +1187,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   )}
                 </div>
 
-                {/* 3b. KEA-30m (Kalman-Entropy Alpha) + встроенные настройки */}
-                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                {/* 3b. KEA-30m */}
+                <div className="rounded-lg border border-white/[0.07] bg-[#0B0E14] p-2">
                   <div className="flex items-center justify-between gap-2">
                     <button
+                      type="button"
                       onClick={() => {
                         const next = !showKeaAlpha;
                         setShowKeaAlpha(next);
@@ -1205,30 +1200,33 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       className="flex-1 flex items-center gap-2 text-left"
                     >
                       <span
-                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
-                          showKeaAlpha ? 'bg-fuchsia-500 text-white' : 'border border-slate-300 bg-white'
+                        className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${
+                          showKeaAlpha
+                            ? 'bg-fuchsia-500 text-white'
+                            : 'border border-white/20 bg-[#161B24]'
                         }`}
                       >
                         {showKeaAlpha && <Check className="w-3 h-3" />}
                       </span>
                       <div>
-                        <div className="font-semibold text-slate-800">
+                        <div className="font-semibold text-slate-100">
                           KEA-30m (Kalman-Entropy)
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] font-mono text-slate-400">
                           ER ≥{keaConfig.erImpulseThreshold.toFixed(2)} · VWAP Z ±{keaConfig.zScoreEntry.toFixed(1)}
                         </div>
                       </div>
                     </button>
 
                     <button
+                      type="button"
                       onClick={() =>
                         setExpandedSettingsId(expandedSettingsId === 'kea' ? null : 'kea')
                       }
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`p-1.5 rounded-md transition-colors ${
                         expandedSettingsId === 'kea'
-                          ? 'bg-slate-900 text-fuchsia-300'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                          ? 'bg-[#222936] text-fuchsia-400'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
                       }`}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
@@ -1236,11 +1234,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   </div>
 
                   {expandedSettingsId === 'kea' && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
+                    <div className="mt-2.5 pt-2.5 border-t border-white/[0.07] space-y-2">
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">ER порог импульса:</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">ER порог импульса:</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             {keaConfig.erImpulseThreshold.toFixed(2)}
                           </span>
                         </div>
@@ -1256,14 +1254,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               erImpulseThreshold: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-fuchsia-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">Z-Score возврат (VWAP):</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">Z-Score возврат (VWAP):</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             ±{keaConfig.zScoreEntry.toFixed(1)}
                           </span>
                         </div>
@@ -1279,14 +1277,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               zScoreEntry: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-fuchsia-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
                       <div>
                         <div className="flex justify-between text-[11px] mb-1">
-                          <span className="text-slate-600">ATR Стоп-лосс:</span>
-                          <span className="font-mono font-semibold text-slate-900">
+                          <span className="text-slate-400">ATR Стоп-лосс:</span>
+                          <span className="font-mono font-semibold text-slate-200">
                             ×{keaConfig.atrStopMult.toFixed(2)}
                           </span>
                         </div>
@@ -1302,12 +1300,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                               atrStopMult: Number(e.target.value),
                             })
                           }
-                          className="w-full accent-fuchsia-500 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                          className="w-full accent-fuchsia-400 h-1.5 bg-white/10 rounded-lg cursor-pointer"
                         />
                       </div>
 
-                      <div className="pt-1.5 border-t border-slate-200/70 space-y-1.5">
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                      <div className="pt-1.5 border-t border-white/[0.07] space-y-1.5">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Импульс-режим (Калман + GK)</span>
                           <input
                             type="checkbox"
@@ -1318,10 +1316,10 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 enableImpulseMode: e.target.checked,
                               })
                             }
-                            className="accent-fuchsia-500 rounded"
+                            className="accent-fuchsia-400 rounded"
                           />
                         </label>
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Z-возврат к 24h VWAP</span>
                           <input
                             type="checkbox"
@@ -1332,10 +1330,10 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 enableRevertMode: e.target.checked,
                               })
                             }
-                            className="accent-fuchsia-500 rounded"
+                            className="accent-fuchsia-400 rounded"
                           />
                         </label>
-                        <label className="flex items-center justify-between text-[11px] text-slate-700 cursor-pointer">
+                        <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer">
                           <span>Фильтр тренда 4h EMA 200</span>
                           <input
                             type="checkbox"
@@ -1346,7 +1344,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 use4hTrendFilter: e.target.checked,
                               })
                             }
-                            className="accent-fuchsia-500 rounded"
+                            className="accent-fuchsia-400 rounded"
                           />
                         </label>
                       </div>
@@ -1355,84 +1353,103 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 </div>
 
                 {/* Остальные индикаторы */}
-                <button
-                  onClick={() => setShowEmaFast(!showEmaFast)}
-                  className="w-full px-2.5 py-1.5 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                >
-                  <span className="font-semibold text-slate-800">EMA 9 и EMA 21</span>
-                  <span
-                    className={`w-4 h-4 rounded flex items-center justify-center ${
-                      showEmaFast ? 'bg-cyan-500 text-white' : 'border border-slate-300'
-                    }`}
-                  >
-                    {showEmaFast && <Check className="w-3 h-3" />}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setShowEmaSlow(!showEmaSlow)}
-                  className="w-full px-2.5 py-1.5 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                >
-                  <span className="font-semibold text-slate-800">EMA 50 и EMA 200</span>
-                  <span
-                    className={`w-4 h-4 rounded flex items-center justify-center ${
-                      showEmaSlow ? 'bg-cyan-500 text-white' : 'border border-slate-300'
-                    }`}
-                  >
-                    {showEmaSlow && <Check className="w-3 h-3" />}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setShowVolume(!showVolume)}
-                  className="w-full px-2.5 py-1.5 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                >
-                  <span className="font-semibold text-slate-800">Объемы (Volume)</span>
-                  <span
-                    className={`w-4 h-4 rounded flex items-center justify-center ${
-                      showVolume ? 'bg-cyan-500 text-white' : 'border border-slate-300'
-                    }`}
-                  >
-                    {showVolume && <Check className="w-3 h-3" />}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setShowSignals(!showSignals)}
-                  className="w-full px-2.5 py-1.5 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                >
-                  <span className="font-semibold text-slate-800">
-                    Метки сигналов (BUY/SELL · LONG/SHORT/EXIT)
-                  </span>
-                  <span
-                    className={`w-4 h-4 rounded flex items-center justify-center ${
-                      showSignals ? 'bg-cyan-500 text-white' : 'border border-slate-300'
-                    }`}
-                  >
-                    {showSignals && <Check className="w-3 h-3" />}
-                  </span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100">
+                <div className="divide-y divide-white/[0.06] rounded-lg border border-white/[0.07] bg-[#0B0E14] overflow-hidden">
                   <button
+                    type="button"
+                    onClick={() => setShowEmaFast(!showEmaFast)}
+                    className="w-full px-2.5 py-2 flex items-center justify-between hover:bg-white/[0.04] transition-colors text-left"
+                  >
+                    <span className="font-medium text-slate-200">EMA 9 и EMA 21</span>
+                    <span
+                      className={`w-4 h-4 rounded flex items-center justify-center ${
+                        showEmaFast ? 'bg-sky-500 text-slate-950' : 'border border-white/20 bg-[#161B24]'
+                      }`}
+                    >
+                      {showEmaFast && <Check className="w-3 h-3" />}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEmaSlow(!showEmaSlow)}
+                    className="w-full px-2.5 py-2 flex items-center justify-between hover:bg-white/[0.04] transition-colors text-left"
+                  >
+                    <span className="font-medium text-slate-200">EMA 50 и EMA 200</span>
+                    <span
+                      className={`w-4 h-4 rounded flex items-center justify-center ${
+                        showEmaSlow ? 'bg-sky-500 text-slate-950' : 'border border-white/20 bg-[#161B24]'
+                      }`}
+                    >
+                      {showEmaSlow && <Check className="w-3 h-3" />}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowVolume(!showVolume)}
+                    className="w-full px-2.5 py-2 flex items-center justify-between hover:bg-white/[0.04] transition-colors text-left"
+                  >
+                    <span className="font-medium text-slate-200">Объемы (Volume)</span>
+                    <span
+                      className={`w-4 h-4 rounded flex items-center justify-center ${
+                        showVolume ? 'bg-sky-500 text-slate-950' : 'border border-white/20 bg-[#161B24]'
+                      }`}
+                    >
+                      {showVolume && <Check className="w-3 h-3" />}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSignals(!showSignals)}
+                    className="w-full px-2.5 py-2 flex items-center justify-between hover:bg-white/[0.04] transition-colors text-left"
+                  >
+                    <span className="font-medium text-slate-200">
+                      Метки сигналов на графике
+                    </span>
+                    <span
+                      className={`w-4 h-4 rounded flex items-center justify-center ${
+                        showSignals ? 'bg-sky-500 text-slate-950' : 'border border-white/20 bg-[#161B24]'
+                      }`}
+                    >
+                      {showSignals && <Check className="w-3 h-3" />}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 p-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setSubChart('rsi')}
+                    className={`py-1.5 px-2 rounded-md font-medium text-center transition-colors ${
+                      subChart === 'rsi'
+                        ? 'bg-[#222936] text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    RSI
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setSubChart('macd')}
-                    className={`py-1.5 px-2 rounded-xl font-semibold border text-center ${
+                    className={`py-1.5 px-2 rounded-md font-medium text-center transition-colors ${
                       subChart === 'macd'
-                        ? 'bg-cyan-50 border-cyan-400 text-cyan-950'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        ? 'bg-[#222936] text-white'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     MACD
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSubChart('stoch')}
-                    className={`py-1.5 px-2 rounded-xl font-semibold border text-center ${
+                    className={`py-1.5 px-2 rounded-md font-medium text-center transition-colors ${
                       subChart === 'stoch'
-                        ? 'bg-cyan-50 border-cyan-400 text-cyan-950'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        ? 'bg-[#222936] text-white'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    Stochastic
+                    Stoch
                   </button>
                 </div>
               </div>
@@ -1441,81 +1458,225 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         </div>
       </div>
 
-      {/* Компактная строка значений свечи без лишних надписей */}
-      <div className="px-3 sm:px-5 py-2 border-b border-white/5 flex flex-wrap items-center gap-x-2.5 gap-y-1 bg-[#081024]/70 text-[11px] sm:text-xs font-mono tabular-nums">
-        {hoveredCandle && hoveredInd && (
-          <>
-            <span className="text-cyan-300 font-bold">{activeAsset.baseAsset}/USDT</span>
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-400">{formatTime(hoveredCandle.timestamp)}</span>
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-300">
-              <strong
-                className={
-                  hoveredCandle.close >= hoveredCandle.open
-                    ? 'text-emerald-400'
-                    : 'text-rose-400'
-                }
-              >
-                ${formatCryptoPrice(hoveredCandle.close, symbol)}
-              </strong>
-            </span>
-            {showBB && (
+      {/* Информационная строка свечи и индикаторов (детали показываются только при наведении на график) */}
+      <div className="border-b border-white/[0.06] bg-[#0B0E14]">
+        <div className="px-3 sm:px-4 py-2 min-h-[34px] flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-[11px] tabular-nums">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0 font-mono">
+            {hoverIndex !== null && hoverIndex < visibleCandles.length && hoveredCandle && hoveredInd ? (
               <>
-                <span className="text-slate-500">·</span>
-                <span className="text-cyan-300">
-                  BB: ${formatCryptoPrice(hoveredInd.bbLower, symbol)}–${formatCryptoPrice(hoveredInd.bbUpper, symbol)}
+                <span className="text-white font-semibold font-sans">
+                  {activeAsset.baseAsset}/USDT
                 </span>
-              </>
-            )}
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-200">RSI: {hoveredInd.rsi.toFixed(1)}</span>
-            {showKeaAlpha && hoveredKeaBar && (
-              <>
-                <span className="text-slate-500">·</span>
-                <span className="text-fuchsia-300">
-                  ER: {hoveredKeaBar.er.toFixed(2)} · Z:{' '}
-                  {hoveredKeaBar.zScore >= 0 ? '+' : ''}
-                  {hoveredKeaBar.zScore.toFixed(2)}
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-400">{formatTime(hoveredCandle.timestamp)}</span>
+                <span className="text-slate-600">·</span>
+                <span>
+                  <span className="text-slate-400 font-sans">Цена </span>
+                  <strong
+                    className={
+                      hoveredCandle.close >= hoveredCandle.open
+                        ? 'text-emerald-400'
+                        : 'text-rose-400'
+                    }
+                  >
+                    ${formatCryptoPrice(hoveredCandle.close, symbol)}
+                  </strong>
                 </span>
-              </>
-            )}
-            {hoveredSignals.map((hs) => {
-              const badgeLabel =
-                hs.type === 'OVERSOLD_BUY'
-                  ? 'BUY'
-                  : hs.type === 'OVERBOUGHT_SELL'
-                  ? 'SELL'
-                  : hs.type;
-              const colorClass =
-                hs.type === 'OVERSOLD_BUY'
-                  ? 'text-cyan-300 font-semibold'
-                  : hs.type === 'OVERBOUGHT_SELL'
-                  ? 'text-rose-400 font-semibold'
-                  : hs.type === 'LONG'
-                  ? 'text-blue-400 font-semibold'
-                  : hs.type === 'SHORT'
-                  ? 'text-amber-400 font-semibold'
-                  : hs.type === 'L EXIT'
-                  ? 'text-purple-400 font-semibold'
-                  : hs.type === 'KEA LONG'
-                  ? 'text-fuchsia-400 font-semibold'
-                  : hs.type === 'KEA SHORT'
-                  ? 'text-pink-400 font-semibold'
-                  : hs.type === 'KEA EXIT'
-                  ? 'text-yellow-300 font-semibold'
-                  : 'text-teal-300 font-semibold';
-              return (
-                <React.Fragment key={hs.id}>
-                  <span className="text-slate-500">·</span>
-                  <span className={colorClass}>
-                    {hs.strategyName}: {badgeLabel}
-                    {hs.confluenceScore ? ` [${hs.confluenceScore}/3]` : ''}
+                <span className="text-slate-400 hidden sm:inline">
+                  <span className="font-sans">Мин–Макс </span>
+                  <span className="text-slate-300">
+                    ${formatCryptoPrice(hoveredCandle.low, symbol)}–$
+                    {formatCryptoPrice(hoveredCandle.high, symbol)}
                   </span>
-                </React.Fragment>
-              );
-            })}
-          </>
+                </span>
+                {showBB && (
+                  <>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-sky-400">
+                      <span className="font-sans">Канал BB </span>$
+                      {formatCryptoPrice(hoveredInd.bbLower, symbol)}–$
+                      {formatCryptoPrice(hoveredInd.bbUpper, symbol)}
+                    </span>
+                  </>
+                )}
+                <span className="text-slate-600">·</span>
+                <span
+                  className={
+                    hoveredInd.rsi <= strategyConfig.rsiOversold
+                      ? 'text-emerald-400'
+                      : hoveredInd.rsi >= strategyConfig.rsiOverbought
+                      ? 'text-rose-400'
+                      : 'text-slate-200'
+                  }
+                >
+                  RSI {hoveredInd.rsi.toFixed(1)}
+                  {hoveredInd.rsi <= strategyConfig.rsiOversold && (
+                    <span className="font-sans text-[10px] ml-1 text-emerald-400/90">
+                      (перепродан)
+                    </span>
+                  )}
+                  {hoveredInd.rsi >= strategyConfig.rsiOverbought && (
+                    <span className="font-sans text-[10px] ml-1 text-rose-400/90">
+                      (перекуплен)
+                    </span>
+                  )}
+                </span>
+                {showKeaAlpha && hoveredKeaBar && (
+                  <>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-fuchsia-300">
+                      <span className="font-sans">Тренд: </span>
+                      <span className="font-sans font-medium">
+                        {hoveredKeaBar.er >= keaConfig.erImpulseThreshold
+                          ? 'Импульс'
+                          : hoveredKeaBar.er <= keaConfig.erRevertThreshold
+                          ? 'Флэт'
+                          : 'Баланс'}
+                      </span>{' '}
+                      <span className="text-slate-400">({hoveredKeaBar.er.toFixed(2)})</span>
+                    </span>
+                    <span className="text-slate-600">·</span>
+                    <span
+                      className={
+                        Math.abs(hoveredKeaBar.zScore) >= keaConfig.zScoreEntry
+                          ? 'text-amber-300'
+                          : 'text-slate-300'
+                      }
+                    >
+                      <span className="font-sans">Откл. VWAP </span>
+                      {hoveredKeaBar.zScore >= 0 ? '+' : ''}
+                      {hoveredKeaBar.zScore.toFixed(2)}σ
+                    </span>
+                  </>
+                )}
+                {hoveredSignals.map((hs) => {
+                  const badgeLabel =
+                    hs.type === 'OVERSOLD_BUY'
+                      ? 'BUY'
+                      : hs.type === 'OVERBOUGHT_SELL'
+                      ? 'SELL'
+                      : hs.type;
+                  const colorClass =
+                    hs.type === 'OVERSOLD_BUY'
+                      ? 'text-sky-400 font-semibold'
+                      : hs.type === 'OVERBOUGHT_SELL'
+                      ? 'text-rose-400 font-semibold'
+                      : hs.type === 'LONG'
+                      ? 'text-blue-400 font-semibold'
+                      : hs.type === 'SHORT'
+                      ? 'text-amber-400 font-semibold'
+                      : hs.type === 'L EXIT'
+                      ? 'text-purple-400 font-semibold'
+                      : hs.type === 'KEA LONG'
+                      ? 'text-fuchsia-400 font-semibold'
+                      : hs.type === 'KEA SHORT'
+                      ? 'text-pink-400 font-semibold'
+                      : hs.type === 'KEA EXIT'
+                      ? 'text-yellow-300 font-semibold'
+                      : 'text-emerald-400 font-semibold';
+                  return (
+                    <React.Fragment key={hs.id}>
+                      <span className="text-slate-600">·</span>
+                      <span className={colorClass}>
+                        {hs.strategyName}: {badgeLabel}
+                        {hs.confluenceScore ? ` [${hs.confluenceScore}/3]` : ''}
+                      </span>
+                    </React.Fragment>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                <span className="text-white font-semibold font-sans">
+                  {activeAsset.baseAsset}/USDT
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-500 font-sans">
+                  Наведите на свечу, чтобы увидеть цену и значения индикаторов
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Легенда линий и кнопка подсказки */}
+          <div className="flex items-center gap-2.5 text-[10px] font-sans text-slate-400 shrink-0 ml-auto">
+            <div className="hidden md:flex items-center gap-3">
+              {showBB && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-[2px] bg-sky-400 inline-block" />
+                  Канал BB
+                </span>
+              )}
+              {showBjBot && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-[2px] bg-blue-400 inline-block" />
+                  Bj MA
+                </span>
+              )}
+              {showKeaAlpha && (
+                <>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-[2px] bg-fuchsia-400 inline-block" />
+                    Kalman
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-[2px] border-t border-dashed border-amber-400 inline-block" />
+                    VWAP
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLegendHelp((v) => !v)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors whitespace-nowrap shrink-0 ${
+                showLegendHelp
+                  ? 'bg-[#222936] text-sky-300 border-sky-400/40'
+                  : 'bg-[#131822] text-slate-300 border-white/[0.08] hover:border-white/20 hover:text-white'
+              }`}
+              title="Что значат эти показатели"
+            >
+              <HelpCircle className="w-3 h-3" />
+              <span>Пояснение</span>
+            </button>
+          </div>
+        </div>
+
+        {showLegendHelp && (
+          <div className="px-3 sm:px-4 py-2.5 bg-[#0E1219] border-t border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-[11px] leading-snug text-slate-300">
+            <div>
+              <span className="font-semibold text-white">Цена и Мин–Макс</span>
+              <p className="text-slate-400 mt-0.5">
+                Цена закрытия выбранной свечи и её разброс от минимума до максимума за период.
+              </p>
+            </div>
+            <div>
+              <span className="font-semibold text-sky-400">Канал BB (Боллинджер)</span>
+              <p className="text-slate-400 mt-0.5">
+                Рабочий коридор цены. Выход ниже границы — перепродано, выше — перекуплено.
+              </p>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-100">RSI (0–100)</span>
+              <p className="text-slate-400 mt-0.5">
+                Сила импульса: ниже {strategyConfig.rsiOversold} — возможен отскок вверх, выше{' '}
+                {strategyConfig.rsiOverbought} — вероятен откат вниз.
+              </p>
+            </div>
+            <div>
+              <span className="font-semibold text-fuchsia-300">Тренд (ER, 0.00–1.00)</span>
+              <p className="text-slate-400 mt-0.5">
+                Направленность рынка: до {keaConfig.erRevertThreshold.toFixed(2)} — боковик (флэт), от{' '}
+                {keaConfig.erImpulseThreshold.toFixed(2)} — чистый трендовый импульс.
+              </p>
+            </div>
+            <div>
+              <span className="font-semibold text-amber-300">Откл. VWAP (Z-оценка)</span>
+              <p className="text-slate-400 mt-0.5">
+                Насколько сильно (в σ) цена оторвалась от справедливой 24ч средней цены по объёму.
+              </p>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1532,7 +1693,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={stopDragging}
-        className={`relative w-full select-none bg-gradient-to-b from-[#070f24] via-[#060d1f] to-[#050a18] overflow-hidden touch-pan-y ${
+        className={`relative w-full select-none bg-[#0B0E14] overflow-hidden touch-pan-y ${
           isHoveringPriceAxis
             ? 'cursor-ns-resize'
             : 'cursor-grab active:cursor-grabbing'
@@ -1543,12 +1704,11 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           className="block w-full h-auto"
         >
           <defs>
-            <linearGradient id="neonCyanBB" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.16" />
-              <stop offset="50%" stopColor="#00f0ff" stopOpacity="0.03" />
-              <stop offset="100%" stopColor="#00f0ff" stopOpacity="0.16" />
+            <linearGradient id="bbFillSubtle" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.09" />
+              <stop offset="50%" stopColor="#38BDF8" stopOpacity="0.02" />
+              <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.09" />
             </linearGradient>
-            {/* ClipPath гарантирует, что при вертикальном растяжении свечи и линии не вылезают за пределы области графика */}
             <clipPath id="mainPlotClip">
               <rect x={padLeft} y={padTop} width={plotWidth} height={plotHeight} />
             </clipPath>
@@ -1560,7 +1720,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             y={padTop}
             width={padRight}
             height={plotHeight}
-            fill={isHoveringPriceAxis ? 'rgba(0, 240, 255, 0.08)' : 'transparent'}
+            fill={isHoveringPriceAxis ? 'rgba(56, 189, 248, 0.08)' : 'transparent'}
           />
 
           {/* Горизонтальная сетка цен */}
@@ -1573,14 +1733,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   y1={y}
                   x2={width - padRight}
                   y2={y}
-                  stroke="#162447"
-                  strokeDasharray="3 3"
+                  stroke="#171D28"
+                  strokeDasharray="2 3"
                   strokeWidth="1"
                 />
                 <text
                   x={width - padRight + 8}
                   y={y + 4}
-                  fill={isHoveringPriceAxis ? '#00f0ff' : '#94a3b8'}
+                  fill={isHoveringPriceAxis ? '#38BDF8' : '#64748B'}
                   fontSize="10"
                   fontFamily="JetBrains Mono, monospace"
                 >
@@ -1597,7 +1757,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               visibleCandles.map((c, idx) => {
                 const x = getX(idx);
                 const volH =
-                  maxVolume > 0 ? (c.volume / maxVolume) * (plotHeight * 0.18) : 0;
+                  maxVolume > 0 ? (c.volume / maxVolume) * (plotHeight * 0.16) : 0;
                 const y = padTop + plotHeight - volH;
                 const isBull = c.close >= c.open;
                 return (
@@ -1607,7 +1767,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                     y={y}
                     width={candleWidth}
                     height={volH}
-                    fill={isBull ? '#10b981' : '#f43f5e'}
+                    fill={isBull ? '#10B981' : '#F43F5E'}
                     fillOpacity="0.16"
                   />
                 );
@@ -1616,18 +1776,18 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             {/* Полосы Боллинджера */}
             {showBB && bbAreaPath && (
               <g>
-                <path d={bbAreaPath} fill="url(#neonCyanBB)" />
+                <path d={bbAreaPath} fill="url(#bbFillSubtle)" />
                 <path
                   d={buildLinePath(bbUpperPoints)}
                   fill="none"
-                  stroke="#00f0ff"
-                  strokeWidth="1.5"
-                  strokeOpacity="0.8"
+                  stroke="#38BDF8"
+                  strokeWidth="1.35"
+                  strokeOpacity="0.65"
                 />
                 <path
                   d={buildLinePath(bbMidPoints)}
                   fill="none"
-                  stroke="#38bdf8"
+                  stroke="#64748B"
                   strokeWidth="1"
                   strokeDasharray="4 4"
                   strokeOpacity="0.45"
@@ -1635,14 +1795,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 <path
                   d={buildLinePath(bbLowerPoints)}
                   fill="none"
-                  stroke="#00f0ff"
-                  strokeWidth="1.5"
-                  strokeOpacity="0.8"
+                  stroke="#38BDF8"
+                  strokeWidth="1.35"
+                  strokeOpacity="0.65"
                 />
               </g>
             )}
 
-            {/* Индикатор Bj Bot (3Commas Bot): MA1, MA2 с динамическим цветом (#64b5f6 / #ef5350), Stop Price (Red) и Target Price (Green) */}
+            {/* Индикатор Bj Bot (3Commas Bot) */}
             {showBjBot && visibleBjBars.length > 0 && (
               <g>
                 {visibleBjBars.map((bar, idx) => {
@@ -1653,46 +1813,42 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
 
                   return (
                     <g key={`bj-seg-${idx}`}>
-                      {/* Moving Average #1 */}
                       <line
                         x1={x1}
                         y1={getY(prevBar.ma1)}
                         x2={x2}
                         y2={getY(bar.ma1)}
-                        stroke={bar.ma1Rising ? '#64b5f6' : '#ef5350'}
-                        strokeWidth="1.8"
+                        stroke={bar.ma1Rising ? '#60A5FA' : '#F87171'}
+                        strokeWidth="1.7"
                       />
-                      {/* Moving Average #2 */}
                       <line
                         x1={x1}
                         y1={getY(prevBar.ma2)}
                         x2={x2}
                         y2={getY(bar.ma2)}
-                        stroke={bar.ma2Rising ? '#64b5f6' : '#ef5350'}
-                        strokeWidth="1.8"
-                        strokeOpacity="0.85"
+                        stroke={bar.ma2Rising ? '#60A5FA' : '#F87171'}
+                        strokeWidth="1.7"
+                        strokeOpacity="0.8"
                       />
-                      {/* Stop Price (Red linebr) */}
                       {bar.stopPrice !== null && prevBar.stopPrice !== null && (
                         <line
                           x1={x1}
                           y1={getY(prevBar.stopPrice)}
                           x2={x2}
                           y2={getY(bar.stopPrice)}
-                          stroke="#ef4444"
-                          strokeWidth="1.4"
+                          stroke="#F43F5E"
+                          strokeWidth="1.3"
                           strokeDasharray="3 2"
                         />
                       )}
-                      {/* Target Price (Green linebr) */}
                       {bar.targetPrice !== null && prevBar.targetPrice !== null && (
                         <line
                           x1={x1}
                           y1={getY(prevBar.targetPrice)}
                           x2={x2}
                           y2={getY(bar.targetPrice)}
-                          stroke="#22c55e"
-                          strokeWidth="1.4"
+                          stroke="#10B981"
+                          strokeWidth="1.3"
                           strokeDasharray="3 2"
                         />
                       )}
@@ -1702,7 +1858,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               </g>
             )}
 
-            {/* Стратегия №3: KEA-30m (Адаптивный фильтр Калмана + 24h Rolling VWAP + активные SL/TP) */}
+            {/* Стратегия №3: KEA-30m (Калман + 24h Rolling VWAP + активные SL/TP) */}
             {showKeaAlpha && visibleKeaBars.length > 1 && (
               <g>
                 <path
@@ -1710,7 +1866,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                     visibleKeaBars.map((bar, idx) => ({ idx, val: bar.vwap }))
                   )}
                   fill="none"
-                  stroke="#fbbf24"
+                  stroke="#F59E0B"
                   strokeWidth="1.2"
                   strokeDasharray="5 4"
                   strokeOpacity="0.68"
@@ -1720,7 +1876,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                     visibleKeaBars.map((bar, idx) => ({ idx, val: bar.kalman }))
                   )}
                   fill="none"
-                  stroke="#d946ef"
+                  stroke="#D946EF"
                   strokeWidth="1.8"
                   strokeOpacity="0.92"
                 />
@@ -1737,7 +1893,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           y1={getY(prevBar.stopPrice)}
                           x2={x2}
                           y2={getY(bar.stopPrice)}
-                          stroke="#fb7185"
+                          stroke="#FB7185"
                           strokeWidth="1.3"
                           strokeDasharray="2 2"
                         />
@@ -1748,7 +1904,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           y1={getY(prevBar.targetPrice)}
                           x2={x2}
                           y2={getY(bar.targetPrice)}
-                          stroke="#a3e635"
+                          stroke="#A3E635"
                           strokeWidth="1.3"
                           strokeDasharray="2 2"
                         />
@@ -1765,13 +1921,13 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 <path
                   d={buildLinePath(ema9Points)}
                   fill="none"
-                  stroke="#fde047"
+                  stroke="#FDE047"
                   strokeWidth="1.4"
                 />
                 <path
                   d={buildLinePath(ema21Points)}
                   fill="none"
-                  stroke="#f59e0b"
+                  stroke="#F59E0B"
                   strokeWidth="1.5"
                 />
               </g>
@@ -1783,13 +1939,13 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 <path
                   d={buildLinePath(ema50Points)}
                   fill="none"
-                  stroke="#c084fc"
+                  stroke="#C084FC"
                   strokeWidth="1.6"
                 />
                 <path
                   d={buildLinePath(ema200Points)}
                   fill="none"
-                  stroke="#ec4899"
+                  stroke="#EC4899"
                   strokeWidth="1.8"
                 />
               </g>
@@ -1799,7 +1955,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             {visibleCandles.map((c, idx) => {
               const x = getX(idx);
               const isBull = c.close >= c.open;
-              const color = isBull ? '#10b981' : '#f43f5e';
+              const color = isBull ? '#10B981' : '#F43F5E';
               const highY = getY(c.high);
               const lowY = getY(c.low);
               const openY = getY(c.open);
@@ -1829,7 +1985,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               );
             })}
 
-            {/* Метки сигналов: Стратегия 1 (BUY / SELL) и Стратегия 2 другого цвета (LONG, SHORT, L EXIT, S EXIT) */}
+            {/* Метки сигналов */}
             {showSignals &&
               visibleCandles.map((c, idx) => {
                 const candleSignals = signalMap.get(c.timestamp);
@@ -1842,7 +1998,6 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 return (
                   <g key={`sig-group-${c.timestamp}`}>
                     {candleSignals.map((sig) => {
-                      // Определяем положение (снизу или сверху свечи), цвет и текст метки
                       const isBelow =
                         sig.type === 'OVERSOLD_BUY' ||
                         sig.type === 'LONG' ||
@@ -1857,55 +2012,54 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                         ? getY(c.low) + 15 + stackOffset
                         : getY(c.high) - 15 - stackOffset;
 
-                      // Отдельные цвета для Стратегии 1 (BUY/SELL), Стратегии 2 (Bj Bot) и Стратегии 3 (KEA-30m)
-                      let badgeColor = '#00f0ff';
-                      let textColor = '#060d1f';
+                      let badgeColor = '#38BDF8';
+                      let textColor = '#090B0E';
                       let labelText = 'BUY';
                       let boxWidth = 34;
 
                       if (sig.type === 'OVERSOLD_BUY') {
-                        badgeColor = '#00f0ff'; // Cyan (Стратегия 1 BUY)
-                        textColor = '#060d1f';
+                        badgeColor = '#38BDF8';
+                        textColor = '#090B0E';
                         labelText = 'BUY';
                         boxWidth = 30;
                       } else if (sig.type === 'OVERBOUGHT_SELL') {
-                        badgeColor = '#f43f5e'; // Rose (Стратегия 1 SELL)
-                        textColor = '#ffffff';
+                        badgeColor = '#F43F5E';
+                        textColor = '#FFFFFF';
                         labelText = 'SELL';
                         boxWidth = 32;
                       } else if (sig.type === 'LONG') {
-                        badgeColor = '#3b82f6'; // Синий/Индиго (Стратегия 2 LONG)
-                        textColor = '#ffffff';
+                        badgeColor = '#3B82F6';
+                        textColor = '#FFFFFF';
                         labelText = 'LONG';
                         boxWidth = 34;
                       } else if (sig.type === 'SHORT') {
-                        badgeColor = '#f59e0b'; // Янтарный/Оранжевый (Стратегия 2 SHORT)
-                        textColor = '#060d1f';
+                        badgeColor = '#F59E0B';
+                        textColor = '#090B0E';
                         labelText = 'SHORT';
                         boxWidth = 38;
                       } else if (sig.type === 'L EXIT') {
-                        badgeColor = '#a855f7'; // Фиолетовый (Стратегия 2 L EXIT)
-                        textColor = '#ffffff';
+                        badgeColor = '#8B5CF6';
+                        textColor = '#FFFFFF';
                         labelText = 'L EXIT';
                         boxWidth = 44;
                       } else if (sig.type === 'S EXIT') {
-                        badgeColor = '#14b8a6'; // Бирюзовый (Стратегия 2 S EXIT)
-                        textColor = '#060d1f';
+                        badgeColor = '#14B8A6';
+                        textColor = '#090B0E';
                         labelText = 'S EXIT';
                         boxWidth = 44;
                       } else if (sig.type === 'KEA LONG') {
-                        badgeColor = '#d946ef'; // Фуксия (Стратегия 3 KEA LONG)
-                        textColor = '#ffffff';
+                        badgeColor = '#D946EF';
+                        textColor = '#FFFFFF';
                         labelText = 'KEA LONG';
                         boxWidth = 48;
                       } else if (sig.type === 'KEA SHORT') {
-                        badgeColor = '#ec4899'; // Малиновый (Стратегия 3 KEA SHORT)
-                        textColor = '#ffffff';
+                        badgeColor = '#EC4899';
+                        textColor = '#FFFFFF';
                         labelText = 'KEA SHORT';
                         boxWidth = 52;
                       } else if (sig.type === 'KEA EXIT') {
-                        badgeColor = '#eab308'; // Золотой (Стратегия 3 KEA EXIT)
-                        textColor = '#060d1f';
+                        badgeColor = '#EAB308';
+                        textColor = '#090B0E';
                         labelText = 'KEA EXIT';
                         boxWidth = 48;
                       }
@@ -1920,12 +2074,12 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                             stroke={badgeColor}
                             strokeWidth="1"
                             strokeDasharray="2 3"
-                            strokeOpacity="0.35"
+                            strokeOpacity="0.3"
                           />
                           {isBelow ? (
                             <g>
                               <polygon
-                                points={`${x},${markerY - 8} ${x - 5.5},${markerY + 2} ${x + 5.5},${markerY + 2}`}
+                                points={`${x},${markerY - 8} ${x - 5},${markerY + 2} ${x + 5},${markerY + 2}`}
                                 fill={badgeColor}
                               />
                               <rect
@@ -1933,7 +2087,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 y={markerY + 4}
                                 width={boxWidth}
                                 height={14}
-                                rx="4"
+                                rx="3"
                                 fill={badgeColor}
                               />
                               <text
@@ -1951,7 +2105,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                           ) : (
                             <g>
                               <polygon
-                                points={`${x},${markerY + 8} ${x - 5.5},${markerY - 2} ${x + 5.5},${markerY - 2}`}
+                                points={`${x},${markerY + 8} ${x - 5},${markerY - 2} ${x + 5},${markerY - 2}`}
                                 fill={badgeColor}
                               />
                               <rect
@@ -1959,7 +2113,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                                 y={markerY - 18}
                                 width={boxWidth}
                                 height={14}
-                                rx="4"
+                                rx="3"
                                 fill={badgeColor}
                               />
                               <text
@@ -1993,24 +2147,24 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   y1={getY(lastCandle.close)}
                   x2={width - padRight}
                   y2={getY(lastCandle.close)}
-                  stroke="#00f0ff"
+                  stroke={isLastBull ? '#10B981' : '#F43F5E'}
                   strokeWidth="1"
                   strokeDasharray="3 3"
-                  strokeOpacity="0.85"
+                  strokeOpacity="0.75"
                 />
                 <rect
                   x={width - padRight + 4}
                   y={getY(lastCandle.close) - 10}
                   width={80}
                   height={20}
-                  rx="5"
-                  fill={isLastBull ? '#00f0ff' : '#f43f5e'}
+                  rx="4"
+                  fill={isLastBull ? '#10B981' : '#F43F5E'}
                 />
                 <text
                   x={width - padRight + 44}
                   y={getY(lastCandle.close) + 3.5}
                   textAnchor="middle"
-                  fill={isLastBull ? '#060d1f' : '#ffffff'}
+                  fill={isLastBull ? '#090B0E' : '#FFFFFF'}
                   fontSize="10"
                   fontWeight="bold"
                   fontFamily="JetBrains Mono, monospace"
@@ -2020,18 +2174,76 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               </g>
             )}
 
-          {/* Перекрестие при наведении */}
-          {hoverIndex !== null && hoverIndex < visibleCandles.length && (
-            <line
-              x1={getX(hoverIndex)}
-              y1={padTop}
-              x2={getX(hoverIndex)}
-              y2={totalHeight - 22}
-              stroke="#00f0ff"
-              strokeWidth="1"
-              strokeDasharray="2 2"
-              strokeOpacity="0.6"
-            />
+          {/* Точное перекрестие (Crosshair X + Y + метки на осях) при наведении */}
+          {hoverIndex !== null && hoverIndex < visibleCandles.length && hoveredCandle && (
+            <g pointerEvents="none">
+              <line
+                x1={getX(hoverIndex)}
+                y1={padTop}
+                x2={getX(hoverIndex)}
+                y2={totalHeight - 22}
+                stroke="#94A3B8"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                strokeOpacity="0.45"
+              />
+              {hoveredCandle.close >= minPrice && hoveredCandle.close <= maxPrice && (
+                <>
+                  <line
+                    x1={padLeft}
+                    y1={getY(hoveredCandle.close)}
+                    x2={width - padRight}
+                    y2={getY(hoveredCandle.close)}
+                    stroke="#94A3B8"
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                    strokeOpacity="0.45"
+                  />
+                  <rect
+                    x={width - padRight + 4}
+                    y={getY(hoveredCandle.close) - 10}
+                    width={80}
+                    height={20}
+                    rx="4"
+                    fill="#222936"
+                    stroke="#38BDF8"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={width - padRight + 44}
+                    y={getY(hoveredCandle.close) + 3.5}
+                    textAnchor="middle"
+                    fill="#F8FAFC"
+                    fontSize="10"
+                    fontWeight="600"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    ${formatCryptoPrice(hoveredCandle.close, symbol)}
+                  </text>
+                </>
+              )}
+              <rect
+                x={Math.max(padLeft, Math.min(width - padRight - 96, getX(hoverIndex) - 48))}
+                y={totalHeight - 19}
+                width={96}
+                height={16}
+                rx="3"
+                fill="#222936"
+                stroke="#38BDF8"
+                strokeWidth="0.8"
+              />
+              <text
+                x={Math.max(padLeft + 48, Math.min(width - padRight - 48, getX(hoverIndex)))}
+                y={totalHeight - 7.5}
+                textAnchor="middle"
+                fill="#F8FAFC"
+                fontSize="9.5"
+                fontWeight="600"
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {formatTime(hoveredCandle.timestamp)}
+              </text>
+            </g>
           )}
 
           {/* Разделитель основного графика и нижней панели осциллятора */}
@@ -2040,8 +2252,8 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             y1={mainHeight}
             x2={width - padRight}
             y2={mainHeight}
-            stroke="#162447"
-            strokeWidth="1.5"
+            stroke="#1E2532"
+            strokeWidth="1"
           />
 
           {/* Нижняя панель осциллятора */}
@@ -2050,7 +2262,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               <text
                 x={padLeft + 6}
                 y={subTop + 10}
-                fill="#94a3b8"
+                fill="#64748B"
                 fontSize="10.5"
                 fontFamily="JetBrains Mono, monospace"
               >
@@ -2062,22 +2274,22 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 y={getOscY(100)}
                 width={plotWidth}
                 height={getOscY(strategyConfig.rsiOverbought) - getOscY(100)}
-                fill="#f43f5e"
-                fillOpacity="0.08"
+                fill="#F43F5E"
+                fillOpacity="0.06"
               />
               <rect
                 x={padLeft}
                 y={getOscY(strategyConfig.rsiOversold)}
                 width={plotWidth}
                 height={getOscY(0) - getOscY(strategyConfig.rsiOversold)}
-                fill="#00f0ff"
-                fillOpacity="0.08"
+                fill="#38BDF8"
+                fillOpacity="0.06"
               />
 
               {[
-                { level: strategyConfig.rsiOverbought, color: '#f43f5e' },
-                { level: 50, color: '#1e293b' },
-                { level: strategyConfig.rsiOversold, color: '#00f0ff' },
+                { level: strategyConfig.rsiOverbought, color: '#F43F5E' },
+                { level: 50, color: '#334155' },
+                { level: strategyConfig.rsiOversold, color: '#38BDF8' },
               ].map((item) => {
                 const ry = getOscY(item.level);
                 return (
@@ -2090,7 +2302,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       stroke={item.color}
                       strokeDasharray="3 3"
                       strokeWidth="1"
-                      strokeOpacity="0.75"
+                      strokeOpacity="0.65"
                     />
                     <text
                       x={width - padRight + 8}
@@ -2105,7 +2317,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 );
               })}
 
-              <path d={rsiPath} fill="none" stroke="#00f0ff" strokeWidth="1.8" />
+              <path d={rsiPath} fill="none" stroke="#38BDF8" strokeWidth="1.65" />
 
               {showSignals &&
                 visibleCandles.map((c, idx) => {
@@ -2115,30 +2327,30 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                   const ind = visibleIndicators[idx];
                   const dotColor =
                     sig.type === 'OVERSOLD_BUY'
-                      ? '#00f0ff'
+                      ? '#38BDF8'
                       : sig.type === 'OVERBOUGHT_SELL'
-                      ? '#f43f5e'
+                      ? '#F43F5E'
                       : sig.type === 'LONG'
-                      ? '#3b82f6'
+                      ? '#3B82F6'
                       : sig.type === 'SHORT'
-                      ? '#f59e0b'
+                      ? '#F59E0B'
                       : sig.type === 'L EXIT'
-                      ? '#a855f7'
+                      ? '#8B5CF6'
                       : sig.type === 'KEA LONG'
-                      ? '#d946ef'
+                      ? '#D946EF'
                       : sig.type === 'KEA SHORT'
-                      ? '#ec4899'
+                      ? '#EC4899'
                       : sig.type === 'KEA EXIT'
-                      ? '#eab308'
-                      : '#14b8a6';
+                      ? '#EAB308'
+                      : '#14B8A6';
                   return (
                     <circle
                       key={`rsi-dot-${c.timestamp}`}
                       cx={getX(idx)}
                       cy={getOscY(ind.rsi)}
-                      r="4.5"
+                      r="4"
                       fill={dotColor}
-                      stroke="#060d1f"
+                      stroke="#0B0E14"
                       strokeWidth="1.5"
                     />
                   );
@@ -2151,7 +2363,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               <text
                 x={padLeft + 6}
                 y={subTop + 10}
-                fill="#94a3b8"
+                fill="#64748B"
                 fontSize="10.5"
                 fontFamily="JetBrains Mono, monospace"
               >
@@ -2163,7 +2375,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 y1={getOscY(0, -macdAbsMax, macdAbsMax)}
                 x2={width - padRight}
                 y2={getOscY(0, -macdAbsMax, macdAbsMax)}
-                stroke="#1e293b"
+                stroke="#1E2532"
                 strokeWidth="1"
               />
 
@@ -2180,14 +2392,14 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                     y={barTop}
                     width={candleWidth}
                     height={barH}
-                    fill={isPos ? '#10b981' : '#f43f5e'}
+                    fill={isPos ? '#10B981' : '#F43F5E'}
                     fillOpacity="0.45"
                   />
                 );
               })}
 
-              <path d={macdLinePath} fill="none" stroke="#00f0ff" strokeWidth="1.6" />
-              <path d={macdSignalPath} fill="none" stroke="#f59e0b" strokeWidth="1.4" />
+              <path d={macdLinePath} fill="none" stroke="#38BDF8" strokeWidth="1.6" />
+              <path d={macdSignalPath} fill="none" stroke="#F59E0B" strokeWidth="1.4" />
             </g>
           )}
 
@@ -2196,7 +2408,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               <text
                 x={padLeft + 6}
                 y={subTop + 10}
-                fill="#94a3b8"
+                fill="#64748B"
                 fontSize="10.5"
                 fontFamily="JetBrains Mono, monospace"
               >
@@ -2204,9 +2416,9 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               </text>
 
               {[
-                { level: 80, color: '#f43f5e' },
-                { level: 50, color: '#1e293b' },
-                { level: 20, color: '#00f0ff' },
+                { level: 80, color: '#F43F5E' },
+                { level: 50, color: '#334155' },
+                { level: 20, color: '#38BDF8' },
               ].map((item) => {
                 const ry = getOscY(item.level, 0, 100);
                 return (
@@ -2219,7 +2431,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                       stroke={item.color}
                       strokeDasharray="3 3"
                       strokeWidth="1"
-                      strokeOpacity="0.7"
+                      strokeOpacity="0.65"
                     />
                     <text
                       x={width - padRight + 8}
@@ -2234,8 +2446,8 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 );
               })}
 
-              <path d={stochKPath} fill="none" stroke="#00f0ff" strokeWidth="1.6" />
-              <path d={stochDPath} fill="none" stroke="#f59e0b" strokeWidth="1.3" />
+              <path d={stochKPath} fill="none" stroke="#38BDF8" strokeWidth="1.6" />
+              <path d={stochDPath} fill="none" stroke="#F59E0B" strokeWidth="1.3" />
             </g>
           )}
 
@@ -2253,7 +2465,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
                 x={getX(idx)}
                 y={totalHeight - 6}
                 textAnchor="middle"
-                fill="#94a3b8"
+                fill="#64748B"
                 fontSize="10"
                 fontFamily="JetBrains Mono, monospace"
               >
@@ -2264,71 +2476,96 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         </svg>
       </div>
 
-      {/* НИЖНЯЯ ПАНЕЛЬ ПОД ГРАФИКОМ: Слева текущее время в реальном времени, справа кнопки приближения/отдаления и А / Л */}
-      <div className="px-3 sm:px-4 py-2 border-t border-cyan-400/15 bg-[#070e22]/90 rounded-b-2xl flex items-center justify-between gap-2">
-        {/* Текущее время */}
-        <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-mono tabular-nums text-slate-300 bg-[#0d1936] border border-cyan-400/20 rounded-xl px-2.5 sm:px-3 py-1.5">
-          <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span className="text-white font-semibold">
-            {currentTime.toLocaleTimeString('ru-RU', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })}
-          </span>
-          <span className="text-slate-500 hidden sm:inline">·</span>
-          <span className="text-slate-400 hidden sm:inline">
-            {currentTime.toLocaleDateString('ru-RU', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-            })}
-          </span>
+      {/* НИЖНЯЯ ПАНЕЛЬ ПОД ГРАФИКОМ: часы, переключатель осциллятора и масштаб */}
+      <div className="px-3 sm:px-4 py-2 border-t border-white/[0.08] bg-[#0E1219] rounded-b-xl flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-300 bg-[#0B0E14] border border-white/[0.07] rounded-lg px-2.5 py-1.5">
+            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="text-slate-100 font-medium">
+              {currentTime.toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
+            </span>
+            <span className="text-slate-600 hidden sm:inline">·</span>
+            <span className="text-slate-400 hidden sm:inline">
+              {currentTime.toLocaleDateString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              })}
+            </span>
+          </div>
+
+          {/* Быстрый 1-клик переключатель нижнего осциллятора */}
+          <div className="flex items-center gap-0.5 bg-[#0B0E14] border border-white/[0.07] rounded-lg p-0.5 text-[11px]">
+            {([
+              { id: 'rsi' as const, label: 'RSI' },
+              { id: 'macd' as const, label: 'MACD' },
+              { id: 'stoch' as const, label: 'Stoch' },
+            ]).map((osc) => (
+              <button
+                key={osc.id}
+                type="button"
+                onClick={() => setSubChart(osc.id)}
+                className={`px-2 py-1 rounded-md font-medium transition-colors whitespace-nowrap ${
+                  subChart === osc.id
+                    ? 'bg-[#222936] text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {osc.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Справа снизу: приближение/отдаление и кнопки А / Л */}
-        <div className="flex items-center gap-1 bg-[#0d1936] border border-cyan-400/20 rounded-xl p-1">
+        <div className="flex items-center gap-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg p-1 ml-auto">
           <button
+            type="button"
             onClick={() => handleZoom(-1)}
-            className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
             title="Приблизить"
           >
-            <ZoomIn className="w-4 h-4" />
+            <ZoomIn className="w-3.5 h-3.5" />
           </button>
           <button
+            type="button"
             onClick={() => handleZoom(1)}
-            className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
             title="Отдалить"
           >
-            <ZoomOut className="w-4 h-4" />
+            <ZoomOut className="w-3.5 h-3.5" />
           </button>
 
-          <div className="w-px h-4 bg-white/10 mx-1" />
+          <div className="w-px h-4 bg-white/[0.08] mx-0.5" />
 
-          {/* Кнопка А — Автоматический масштаб */}
           <button
+            type="button"
             onClick={() => {
               setIsAutoScale((prev) => !prev);
               setPriceScaleStretch(1.0);
               setPriceVerticalPan(0.0);
             }}
-            className={`w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all flex items-center justify-center ${
+            className={`w-7 h-7 rounded-md text-xs font-semibold font-mono transition-colors flex items-center justify-center border ${
               isAutoScale
-                ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(34,211,238,0.45)]'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                ? 'bg-[#222936] text-sky-400 border-sky-400/35'
+                : 'text-slate-400 hover:text-white hover:bg-white/[0.05] border-transparent'
             }`}
             title="А — Автомасштаб"
           >
             А
           </button>
 
-          {/* Кнопка Л — Логарифмическая шкала */}
           <button
+            type="button"
             onClick={() => setIsLogScale((prev) => !prev)}
-            className={`w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all flex items-center justify-center ${
+            className={`w-7 h-7 rounded-md text-xs font-semibold font-mono transition-colors flex items-center justify-center border ${
               isLogScale
-                ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(34,211,238,0.45)]'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                ? 'bg-[#222936] text-sky-400 border-sky-400/35'
+                : 'text-slate-400 hover:text-white hover:bg-white/[0.05] border-transparent'
             }`}
             title="Л — Логарифмическая шкала"
           >
@@ -2340,9 +2577,10 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             priceScaleStretch !== 1.0 ||
             priceVerticalPan !== 0.0) && (
             <button
+              type="button"
               onClick={handleResetView}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 transition-colors flex items-center gap-1 ml-1"
-              title="Сброс"
+              className="px-2 py-1 rounded-md text-[11px] font-medium bg-[#222936] text-sky-400 hover:bg-[#2a3344] transition-colors flex items-center gap-1 ml-0.5"
+              title="Сброс вида"
             >
               <RotateCcw className="w-3 h-3" />
             </button>

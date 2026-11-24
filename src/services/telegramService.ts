@@ -206,8 +206,16 @@ export function detectRsiBbSignals(
 
     if (signalType) {
       const volumeRatio = computeVolumeRatio(candles, i, 20);
+      const isLongDir = signalType === 'OVERSOLD_BUY';
+      const atr = ind.atr > 0 ? ind.atr : c.close * 0.01;
+      const stopDist = Math.max(atr * 1.5, c.close * 0.008);
+      const stopPrice = isLongDir ? c.close - stopDist : c.close + stopDist;
+      const targetPrice = isLongDir
+        ? Math.max(ind.bbMiddle, c.close + stopDist * 1.15)
+        : Math.min(ind.bbMiddle, c.close - stopDist * 1.15);
+
       const confluence = computeConfluenceScore({
-        direction: signalType === 'OVERSOLD_BUY' ? 'LONG' : 'SHORT',
+        direction: isLongDir ? 'LONG' : 'SHORT',
         trend4h: trendAtBar,
         volumeRatio,
         bbWidth: ind.bbWidth,
@@ -223,6 +231,9 @@ export function detectRsiBbSignals(
         candleTimestamp: c.timestamp,
         type: signalType,
         price: c.close,
+        entryPrice: c.close,
+        stopPrice,
+        targetPrice,
         rsiValue: ind.rsi,
         bbUpper: ind.bbUpper,
         bbLower: ind.bbLower,
@@ -265,6 +276,13 @@ export function formatSignalTelegramMessage(
     day: '2-digit',
     month: '2-digit',
   });
+  const exLabel = exchange ? exchange.toUpperCase() : 'BINANCE';
+  const basePrice = signal.entryPrice || signal.price;
+  const formatLevelPct = (lvl: number): string => {
+    if (!basePrice || basePrice <= 0) return '';
+    const pct = ((lvl - basePrice) / basePrice) * 100;
+    return ` (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+  };
 
   if (signal.type === 'BREAKEVEN') {
     const isShort =
@@ -278,9 +296,9 @@ export function formatSignalTelegramMessage(
       '',
       `💰 <b>Текущая цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
       signal.targetPrice
-        ? `🎯 <b>Цель TP:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
         : '',
-      `⏱ <b>Таймфрейм:</b> ${signal.timeframe} (${exchange.toUpperCase()})`,
+      `⏱ <b>Таймфрейм:</b> ${signal.timeframe} (${exLabel})`,
       `🕒 <i>Свеча: ${dateStr}</i>`,
     ]
       .filter(Boolean)
@@ -291,8 +309,8 @@ export function formatSignalTelegramMessage(
   const trendLine = `🧭 ${formatTrend4hLine(signal.trend4h)}`;
   const volLine =
     signal.volumeRatio !== undefined
-      ? `📊 <b>Объем / BBW:</b> ×${signal.volumeRatio.toFixed(1)} от ср.20${
-          signal.bbWidth !== undefined ? ` · Ширина BB ${signal.bbWidth.toFixed(1)}%` : ''
+      ? `📊 <b>Объем / Канал BBW:</b> ×${signal.volumeRatio.toFixed(1)} от ср.20${
+          signal.bbWidth !== undefined ? ` · Ширина ${signal.bbWidth.toFixed(1)}%` : ''
         }`
       : '';
 
@@ -305,29 +323,27 @@ export function formatSignalTelegramMessage(
     const header = titleMap[signal.type] || `<b>KEA-30m ${signal.baseAsset}/USDT — ${signal.type}</b>`;
     const modeLabel =
       signal.keaMode === 'Z_REVERT'
-        ? 'Упругий возврат к 24h VWAP'
+        ? 'Возврат к 24h VWAP'
         : 'Импульсный пробой Калмана';
     const quantMetrics =
       signal.erValue !== undefined && signal.zScore !== undefined
-        ? `📐 <b>ER:</b> ${signal.erValue.toFixed(2)} · <b>Z-Score:</b> ${
+        ? `📐 <b>Тренд ER:</b> ${signal.erValue.toFixed(2)} · <b>Откл. VWAP (Z):</b> ${
             signal.zScore >= 0 ? '+' : ''
-          }${signal.zScore.toFixed(2)}${
-            signal.gkVolRatio !== undefined ? ` · <b>GK-Сжатие:</b> ${signal.gkVolRatio.toFixed(2)}` : ''
-          }`
+          }${signal.zScore.toFixed(2)}σ`
         : '';
 
     return [
       header,
       scoreLine,
       '',
-      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
+      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exLabel})`,
       `🧠 <b>Режим:</b> ${modeLabel}`,
-      `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
-      signal.stopPrice
-        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}`
-        : '',
+      `💰 <b>Цена входа:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
       signal.targetPrice
-        ? `🎯 <b>Цель TP:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}${formatLevelPct(signal.targetPrice)}`
+        : '',
+      signal.stopPrice
+        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}${formatLevelPct(signal.stopPrice)}`
         : '',
       '',
       quantMetrics,
@@ -356,13 +372,13 @@ export function formatSignalTelegramMessage(
       header,
       scoreLine,
       '',
-      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
-      `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
-      signal.stopPrice
-        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}`
-        : '',
+      `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exLabel})`,
+      `💰 <b>Цена входа:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
       signal.targetPrice
-        ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}`
+        ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}${formatLevelPct(signal.targetPrice)}`
+        : '',
+      signal.stopPrice
+        ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}${formatLevelPct(signal.stopPrice)}`
         : '',
       '',
       trendLine,
@@ -383,12 +399,15 @@ export function formatSignalTelegramMessage(
     header,
     scoreLine,
     '',
-    `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exchange.toUpperCase()})`,
-    `💰 <b>Цена:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
-    `• <b>RSI (${config.rsiPeriod}):</b> ${signal.rsiValue.toFixed(1)} | <b>%B:</b> ${(
-      signal.percentB * 100
-    ).toFixed(0)}%`,
-    `• <b>Границы BB:</b> $${formatCryptoPrice(signal.bbLower, signal.symbol)} — $${formatCryptoPrice(
+    `📌 <b>Пара:</b> ${signal.baseAsset}/USDT · ${signal.timeframe} (${exLabel})`,
+    `💰 <b>Цена входа:</b> $${formatCryptoPrice(signal.price, signal.symbol)}`,
+    signal.targetPrice
+      ? `🎯 <b>Take Profit:</b> $${formatCryptoPrice(signal.targetPrice, signal.symbol)}${formatLevelPct(signal.targetPrice)}`
+      : '',
+    signal.stopPrice
+      ? `🛑 <b>Stop Loss:</b> $${formatCryptoPrice(signal.stopPrice, signal.symbol)}${formatLevelPct(signal.stopPrice)}`
+      : '',
+    `• <b>RSI (${config.rsiPeriod}):</b> ${signal.rsiValue.toFixed(1)} | <b>Канал BB:</b> $${formatCryptoPrice(signal.bbLower, signal.symbol)}–$${formatCryptoPrice(
       signal.bbUpper,
       signal.symbol
     )}`,

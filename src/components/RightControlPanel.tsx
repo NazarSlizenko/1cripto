@@ -30,8 +30,6 @@ import {
   Check,
   Info,
   TrendingUp,
-  LogIn,
-  LogOut,
 } from 'lucide-react';
 
 interface RightControlPanelProps {
@@ -71,11 +69,43 @@ interface RightControlPanelProps {
   >;
   trend4hBySymbol?: Partial<Record<CryptoSymbol, Trend4hInfo>>;
   timeframe: TimeframeId;
-  userEmail: string | null;
-  isAuthLoading: boolean;
-  onSignInGoogle: () => Promise<void>;
-  onSignOutGoogle: () => Promise<void>;
 }
+
+interface ToggleSwitchProps {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  accent?: 'sky' | 'fuchsia';
+  ariaLabel: string;
+}
+
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
+  checked,
+  onChange,
+  accent = 'sky',
+  ariaLabel,
+}) => {
+  const activeBg = accent === 'fuchsia' ? 'bg-fuchsia-500' : 'bg-sky-500';
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors cursor-pointer ${
+        checked
+          ? `${activeBg} border-transparent`
+          : 'bg-[#171C26] border-white/[0.14]'
+      }`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-[18px]' : 'translate-x-[3px]'
+        }`}
+      />
+    </button>
+  );
+};
 
 export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   symbol,
@@ -106,10 +136,6 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   stats30mBySymbol,
   trend4hBySymbol,
   timeframe,
-  userEmail,
-  isAuthLoading,
-  onSignInGoogle,
-  onSignOutGoogle,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'strategy' | 'stats30m' | 'telegram' | 'signals'
@@ -132,12 +158,11 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
   const percentB = (latestInd?.bbPercentB ?? 0.5) * 100;
   const activeTrend4h = trend4hBySymbol?.[symbol];
   const currentBbWidth = latestInd?.bbWidth ?? 3.5;
-  const isCurrentFlat = (bjConfig.useFlatFilter ?? true) && currentBbWidth < (bjConfig.minBbWidth ?? 1.5);
+  const isCurrentFlat =
+    (bjConfig.useFlatFilter ?? true) && currentBbWidth < (bjConfig.minBbWidth ?? 1.5);
 
-  // Выборка максимум 50 последних сигналов
   const latest50Signals = allSignals.slice(0, 50);
 
-  // Статистика 30m для активной монеты
   const activePairStats = stats30mBySymbol[symbol];
   const currentSingleStats: StrategyPairStats | undefined =
     selectedStatsStrategy === 'bj_bot'
@@ -148,113 +173,83 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ПАНЕЛЬ 1 (Crisp White Panel): Аккаунт, цена выбранной криптовалюты, метрики 24ч и уровни RSI / Боллинджера */}
-      <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 relative z-20">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100 text-xs">
-          {isAuthLoading ? (
-            <span className="text-slate-400">Проверка профиля...</span>
-          ) : userEmail ? (
-            <>
-              <span className="font-medium text-slate-700 truncate max-w-[200px] sm:max-w-[210px]">
-                {userEmail}
-              </span>
-              <button
-                type="button"
-                onClick={onSignOutGoogle}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Выйти</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="text-slate-500">Синхронизация профиля и истории</span>
-              <button
-                type="button"
-                onClick={onSignInGoogle}
-                className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-cyan-300 font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Войти через Google</span>
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-baseline justify-between gap-2 pb-4 border-b border-slate-100">
+      {/* ПАНЕЛЬ 1: Рыночная сводка выбранной пары, 24ч метрики и индикаторы импульса */}
+      <div className="bg-[#11151D] text-slate-100 rounded-xl p-4 sm:p-5 border border-white/[0.08] relative z-20">
+        <div className="flex items-baseline justify-between gap-3 pb-4 border-b border-white/[0.06]">
           <div className="relative min-w-0">
             <button
+              type="button"
               onClick={() => setIsCoinDropdownOpen((prev) => !prev)}
-              className="text-xs font-bold text-slate-600 hover:text-slate-950 flex items-center gap-1 transition-colors"
+              className="text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors"
             >
               <span className="truncate">
                 {assetInfo.name} · {assetInfo.baseAsset}/USDT ({timeframe})
               </span>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
             </button>
 
             {isCoinDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-56 max-w-[calc(100vw-3rem)] bg-white text-slate-900 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.28)] border border-slate-200 p-1.5 z-50 space-y-0.5">
+              <div className="absolute left-0 top-full mt-1.5 w-56 max-w-[calc(100vw-3rem)] bg-[#161B24] text-slate-200 rounded-xl shadow-2xl border border-white/[0.12] p-1.5 z-50 space-y-0.5">
                 {CRYPTO_ASSETS.map((a) => (
                   <button
                     key={a.symbol}
+                    type="button"
                     onClick={() => {
                       onSelectSymbol(a.symbol);
                       setIsCoinDropdownOpen(false);
                     }}
-                    className={`w-full px-3 py-1.5 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                    className={`w-full px-3 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors border ${
                       symbol === a.symbol
-                        ? 'bg-slate-950 text-cyan-300 font-bold'
-                        : 'hover:bg-slate-100 text-slate-800 font-medium'
+                        ? 'bg-[#222936] text-white font-semibold border-sky-400/30'
+                        : 'hover:bg-white/[0.04] text-slate-300 font-medium border-transparent'
                     }`}
                   >
                     <span>
                       {a.baseAsset}/USDT · {a.name}
                     </span>
-                    {symbol === a.symbol && <Check className="w-3.5 h-3.5" />}
+                    {symbol === a.symbol && <Check className="w-3.5 h-3.5 text-sky-400" />}
                   </button>
                 ))}
               </div>
             )}
 
-            <div className="text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight text-slate-950 mt-1">
+            <div className="text-2xl sm:text-3xl font-semibold font-mono tabular-nums tracking-tight text-white mt-1.5">
               ${formatCryptoPrice(spotPrice, symbol)}
             </div>
           </div>
 
           <div className="text-right shrink-0">
             <div
-              className={`text-sm font-mono font-bold tabular-nums ${
-                isPositive24h ? 'text-emerald-600' : 'text-rose-600'
+              className={`text-sm font-mono font-semibold tabular-nums ${
+                isPositive24h ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
               {isPositive24h ? '+' : ''}
               {changePercent24h.toFixed(2)}%
             </div>
-            <div className="text-[11px] sm:text-xs font-mono text-slate-400 tabular-nums mt-0.5">
+            <div className="text-[11px] font-mono text-slate-400 tabular-nums mt-0.5">
               {isPositive24h ? '+' : ''}${formatCryptoPrice(Math.abs(change24h), symbol)} за 24ч
             </div>
           </div>
         </div>
 
-        {/* Строка ключевых рыночных показателей */}
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 py-3.5 border-b border-slate-100 text-xs font-mono tabular-nums">
+        {/* Ключевые рыночные показатели 24ч */}
+        <div className="grid grid-cols-3 gap-3 py-3.5 border-b border-white/[0.06] text-xs font-mono tabular-nums">
           <div>
-            <div className="text-slate-400 font-sans">Макс 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5 truncate">
+            <div className="text-[11px] text-slate-400 font-sans">Макс 24ч</div>
+            <div className="text-slate-100 font-semibold mt-0.5 truncate">
               ${formatCryptoPrice(high24h, symbol)}
             </div>
           </div>
           <div>
-            <div className="text-slate-400 font-sans">Мин 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5 truncate">
+            <div className="text-[11px] text-slate-400 font-sans">Мин 24ч</div>
+            <div className="text-slate-100 font-semibold mt-0.5 truncate">
               ${formatCryptoPrice(low24h, symbol)}
             </div>
           </div>
           <div>
-            <div className="text-slate-400 font-sans">Объем 24ч</div>
-            <div className="text-slate-900 font-semibold mt-0.5 truncate">
+            <div className="text-[11px] text-slate-400 font-sans">Объем 24ч</div>
+            <div className="text-slate-100 font-semibold mt-0.5 truncate">
               {(volume24h / 1000).toFixed(1)}K {assetInfo.baseAsset}
             </div>
           </div>
@@ -262,37 +257,37 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
         {/* Текущие показатели RSI и Полос Боллинджера */}
         {latestInd && latestCandle && (
-          <div className="pt-3.5 grid grid-cols-2 gap-3.5 sm:gap-5">
+          <div className="pt-3.5 grid grid-cols-2 gap-4">
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
-                <span className="font-semibold text-slate-700">
+                <span className="font-medium text-slate-300">
                   RSI ({strategyConfig.rsiPeriod})
                 </span>
                 <span
-                  className={`font-mono font-bold tabular-nums ${
+                  className={`font-mono font-semibold tabular-nums ${
                     rsiVal <= strategyConfig.rsiOversold
-                      ? 'text-emerald-600'
+                      ? 'text-emerald-400'
                       : rsiVal >= strategyConfig.rsiOverbought
-                      ? 'text-rose-600'
-                      : 'text-cyan-600'
+                      ? 'text-rose-400'
+                      : 'text-sky-400'
                   }`}
                 >
                   {rsiVal.toFixed(1)}
                 </span>
               </div>
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-1">
+              <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden mb-1">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     rsiVal <= strategyConfig.rsiOversold
                       ? 'bg-emerald-500'
                       : rsiVal >= strategyConfig.rsiOverbought
                       ? 'bg-rose-500'
-                      : 'bg-cyan-500'
+                      : 'bg-sky-400'
                   }`}
                   style={{ width: `${Math.max(0, Math.min(100, rsiVal))}%` }}
                 />
               </div>
-              <div className="text-[11px] text-slate-400 flex justify-between font-mono tabular-nums">
+              <div className="text-[10px] text-slate-500 flex justify-between font-mono tabular-nums">
                 <span>≤{strategyConfig.rsiOversold}</span>
                 <span>≥{strategyConfig.rsiOverbought}</span>
               </div>
@@ -300,34 +295,32 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
-                <span className="font-semibold text-slate-700">
-                  Боллинджер %B
-                </span>
+                <span className="font-medium text-slate-300">Боллинджер %B</span>
                 <span
-                  className={`font-mono font-bold tabular-nums ${
+                  className={`font-mono font-semibold tabular-nums ${
                     percentB <= 10
-                      ? 'text-emerald-600'
+                      ? 'text-emerald-400'
                       : percentB >= 90
-                      ? 'text-rose-600'
-                      : 'text-cyan-600'
+                      ? 'text-rose-400'
+                      : 'text-sky-400'
                   }`}
                 >
                   {percentB.toFixed(0)}%
                 </span>
               </div>
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-1">
+              <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden mb-1">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     percentB <= 10
                       ? 'bg-emerald-500'
                       : percentB >= 90
                       ? 'bg-rose-500'
-                      : 'bg-cyan-500'
+                      : 'bg-sky-400'
                   }`}
                   style={{ width: `${Math.max(0, Math.min(100, percentB))}%` }}
                 />
               </div>
-              <div className="text-[11px] text-slate-400 flex justify-between font-mono tabular-nums">
+              <div className="text-[10px] text-slate-500 flex justify-between font-mono tabular-nums">
                 <span>${formatCryptoPrice(latestInd.bbLower, symbol)}</span>
                 <span>${formatCryptoPrice(latestInd.bbUpper, symbol)}</span>
               </div>
@@ -335,18 +328,18 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </div>
         )}
 
-        {/* Компактная строка глобального фильтра 4h EMA 200 и состояния сжатия BBW */}
-        <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums">
-          <div className="flex items-center gap-1.5 text-slate-600 font-sans">
-            <span>Тренд 4h EMA 200:</span>
+        {/* Глобальный фильтр 4h EMA 200 и режим волатильности BBW */}
+        <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums">
+          <div className="flex items-center gap-1.5 text-slate-400 font-sans">
+            <span>4h EMA 200:</span>
             {activeTrend4h ? (
               <span
-                className={`font-bold ${
+                className={`font-semibold ${
                   activeTrend4h.trend === 'BULLISH'
-                    ? 'text-emerald-600'
+                    ? 'text-emerald-400'
                     : activeTrend4h.trend === 'BEARISH'
-                    ? 'text-rose-600'
-                    : 'text-slate-500'
+                    ? 'text-rose-400'
+                    : 'text-slate-300'
                 }`}
               >
                 {activeTrend4h.trend === 'BULLISH'
@@ -358,12 +351,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 {activeTrend4h.distancePercent.toFixed(1)}%)
               </span>
             ) : (
-              <span className="text-slate-400">Расчет...</span>
+              <span className="text-slate-500">Расчет...</span>
             )}
           </div>
           <span
-            className={`font-semibold ${
-              isCurrentFlat ? 'text-amber-600' : 'text-slate-500'
+            className={`font-medium ${
+              isCurrentFlat ? 'text-amber-400' : 'text-slate-400'
             }`}
           >
             BBW {currentBbWidth.toFixed(1)}%{isCurrentFlat ? ' · Флэт' : ''}
@@ -371,16 +364,17 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
         </div>
       </div>
 
-      {/* ПАНЕЛЬ 2 (Crisp White Panel): Стратегии, Статистика 30м, Telegram-Бот и 50 последних сигналов */}
-      <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-5 shadow-[0_18px_45px_-12px_rgba(0,240,255,0.18)] border border-cyan-300/40 flex flex-col">
-        {/* Навигация по разделам панели: 2x2 на мобильных и узких ПК, 4x1 на широких экранах */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-4">
+      {/* ПАНЕЛЬ 2: Стратегии, Статистика 30м, Telegram-Бот и Сигналы */}
+      <div className="bg-[#11151D] text-slate-100 rounded-xl p-4 sm:p-5 border border-white/[0.08] flex flex-col">
+        {/* Сегментированная навигация панели */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 p-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg mb-4">
           <button
+            type="button"
             onClick={() => setActiveTab('strategy')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+            className={`py-2 px-2 rounded-md text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'strategy'
-                ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                : 'text-slate-600 hover:text-slate-950'
+                ? 'bg-[#222936] text-white font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Sliders className="w-3.5 h-3.5 shrink-0" />
@@ -388,11 +382,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('stats30m')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+            className={`py-2 px-2 rounded-md text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'stats30m'
-                ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                : 'text-slate-600 hover:text-slate-950'
+                ? 'bg-[#222936] text-white font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5 shrink-0" />
@@ -400,11 +395,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('telegram')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+            className={`py-2 px-2 rounded-md text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'telegram'
-                ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                : 'text-slate-600 hover:text-slate-950'
+                ? 'bg-[#222936] text-white font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Bell className="w-3.5 h-3.5 shrink-0" />
@@ -412,11 +408,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('signals')}
-            className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all whitespace-nowrap ${
+            className={`py-2 px-2 rounded-md text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'signals'
-                ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                : 'text-slate-600 hover:text-slate-950'
+                ? 'bg-[#222936] text-white font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <BarChart2 className="w-3.5 h-3.5 shrink-0" />
@@ -424,15 +421,15 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </button>
         </div>
 
-        {/* ВКЛАДКА 1: Список активных стратегий с дополнительным меню описания работы и быстрым переходом к статистике 30м */}
+        {/* ВКЛАДКА 1: Стратегии */}
         {activeTab === 'strategy' && (
-          <div className="space-y-3">
+          <div className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.07] bg-[#0B0E14] overflow-hidden">
             {/* Стратегия №1: RSI + Полосы Боллинджера */}
-            <div className="rounded-xl border border-slate-200 hover:border-cyan-400 transition-colors overflow-hidden">
-              <div className="flex items-center justify-between p-3.5 gap-2">
+            <div>
+              <div className="flex items-start justify-between p-3.5 gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-slate-950">
+                    <span className="text-sm font-semibold text-white">
                       1. RSI + Полосы Боллинджера
                     </span>
                     <button
@@ -442,29 +439,31 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           expandedStrategyInfo === 'rsi_bb' ? null : 'rsi_bb'
                         )
                       }
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors shrink-0 ${
                         expandedStrategyInfo === 'rsi_bb'
-                          ? 'bg-slate-950 text-cyan-300'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950'
+                          ? 'bg-[#222936] text-sky-400'
+                          : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200'
                       }`}
                     >
                       <Info className="w-3 h-3" />
-                      <span>Как работает</span>
+                      <span>Детали</span>
                     </button>
                   </div>
-                  <div className="text-xs font-mono text-slate-500 mt-0.5">
+                  <div className="text-xs font-mono text-slate-400 mt-1">
                     RSI({strategyConfig.rsiPeriod}) ≤{strategyConfig.rsiOversold} / ≥{strategyConfig.rsiOverbought} · BB({strategyConfig.bbPeriod}, {strategyConfig.bbStdDev.toFixed(1)}σ)
                   </div>
 
                   {activePairStats?.rsi_bb && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
-                      <span className="text-slate-600 font-sans">
-                        Успешность 30м ({assetInfo.baseAsset}):{' '}
-                        <strong className="font-mono text-emerald-600">
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-white/[0.05] text-xs font-mono tabular-nums">
+                      <span className="text-slate-400 font-sans">
+                        30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-400">
                           {activePairStats.rsi_bb.winRate.toFixed(1)}%
                         </strong>{' '}
-                        ({activePairStats.rsi_bb.winningTrades}W /{' '}
-                        {activePairStats.rsi_bb.losingTrades}L)
+                        <span className="text-slate-500">
+                          ({activePairStats.rsi_bb.winningTrades}W /{' '}
+                          {activePairStats.rsi_bb.losingTrades}L)
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -472,7 +471,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           setSelectedStatsStrategy('rsi_bb');
                           setActiveTab('stats30m');
                         }}
-                        className="text-[11px] font-sans font-semibold text-cyan-600 hover:text-cyan-800 whitespace-nowrap shrink-0"
+                        className="text-[11px] font-sans font-medium text-sky-400 hover:text-sky-300 whitespace-nowrap shrink-0"
                       >
                         Статистика 30м →
                       </button>
@@ -480,42 +479,40 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   )}
                 </div>
 
-                <input
-                  type="checkbox"
-                  checked={strategyConfig.enabled}
-                  onChange={(e) =>
-                    onUpdateStrategy({
-                      ...strategyConfig,
-                      enabled: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
-                />
+                <div className="pt-0.5">
+                  <ToggleSwitch
+                    checked={strategyConfig.enabled}
+                    onChange={(enabled) =>
+                      onUpdateStrategy({ ...strategyConfig, enabled })
+                    }
+                    ariaLabel="Включить стратегию RSI + Полосы Боллинджера"
+                  />
+                </div>
               </div>
 
               {expandedStrategyInfo === 'rsi_bb' && (
-                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
-                  <div className="font-semibold text-slate-900">
+                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-white/[0.06] bg-[#11151D] text-xs text-slate-300 space-y-2">
+                  <div className="font-semibold text-white">
                     Принцип работы (Точный отскок + анти-спам волн):
                   </div>
-                  <p className="leading-relaxed text-slate-600">
-                    Когда цена касается полос Боллинджера и RSI ({strategyConfig.rsiPeriod}) входит в зону экстремума, стратегия взводится и ждёт точную разворотную свечу или перелом RSI (без серии спама на падающем тренде). Тренд 4h EMA 200 усиливает рейтинг до 🔥 3/3 (жёсткую блокировку можно включить в настройках RSI).
+                  <p className="leading-relaxed text-slate-400">
+                    Когда цена касается полос Боллинджера и RSI ({strategyConfig.rsiPeriod}) входит в зону экстремума, алгоритм ждёт подтверждающую разворотную свечу или перелом RSI, отсекая спам на затяжном импульсе.
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#00f0ff] text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500 text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         BUY
                       </span>
-                      <span>
-                        <strong>Покупка:</strong> экстремум у нижней BB при <code>RSI ≤ {strategyConfig.rsiOversold}</code> + первая бычья разворотная свеча / разворот RSI вверх, затем пауза до восстановления волны.
+                      <span className="text-slate-300">
+                        <strong className="text-white">Покупка:</strong> экстремум у нижней BB при <code className="text-sky-300">RSI ≤ {strategyConfig.rsiOversold}</code> + бычий разворот.
                       </span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#f43f5e] text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                      <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         SELL
                       </span>
-                      <span>
-                        <strong>Продажа:</strong> экстремум у верхней BB при <code>RSI ≥ {strategyConfig.rsiOverbought}</code> + медвежья разворотная свеча / перелом RSI вниз.
+                      <span className="text-slate-300">
+                        <strong className="text-white">Продажа:</strong> экстремум у верхней BB при <code className="text-rose-300">RSI ≥ {strategyConfig.rsiOverbought}</code> + медвежий разворот.
                       </span>
                     </div>
                   </div>
@@ -523,12 +520,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               )}
             </div>
 
-            {/* Стратегия №2: Bj Bot (3Commas Bot) */}
-            <div className="rounded-xl border border-slate-200 hover:border-cyan-400 transition-colors overflow-hidden">
-              <div className="flex items-center justify-between p-3.5 gap-2">
+            {/* Стратегия №2: Bj Bot */}
+            <div>
+              <div className="flex items-start justify-between p-3.5 gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-slate-950">
+                    <span className="text-sm font-semibold text-white">
                       2. Bj Bot (3Commas Bot)
                     </span>
                     <button
@@ -538,29 +535,31 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           expandedStrategyInfo === 'bj_bot' ? null : 'bj_bot'
                         )
                       }
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors shrink-0 ${
                         expandedStrategyInfo === 'bj_bot'
-                          ? 'bg-slate-950 text-cyan-300'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950'
+                          ? 'bg-[#222936] text-sky-400'
+                          : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200'
                       }`}
                     >
                       <Info className="w-3 h-3" />
-                      <span>Как работает</span>
+                      <span>Детали</span>
                     </button>
                   </div>
-                  <div className="text-xs font-mono text-slate-500 mt-0.5">
+                  <div className="text-xs font-mono text-slate-400 mt-1">
                     {bjConfig.maType1}({bjConfig.maLength1}) × {bjConfig.maType2}({bjConfig.maLength2}) · R:R {bjConfig.rnr.toFixed(1)} · BBW ≥{(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%
                   </div>
 
                   {activePairStats?.bj_bot && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
-                      <span className="text-slate-600 font-sans">
-                        Успешность 30м ({assetInfo.baseAsset}):{' '}
-                        <strong className="font-mono text-emerald-600">
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-white/[0.05] text-xs font-mono tabular-nums">
+                      <span className="text-slate-400 font-sans">
+                        30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-400">
                           {activePairStats.bj_bot.winRate.toFixed(1)}%
                         </strong>{' '}
-                        ({activePairStats.bj_bot.winningTrades}W /{' '}
-                        {activePairStats.bj_bot.losingTrades}L)
+                        <span className="text-slate-500">
+                          ({activePairStats.bj_bot.winningTrades}W /{' '}
+                          {activePairStats.bj_bot.losingTrades}L)
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -568,7 +567,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           setSelectedStatsStrategy('bj_bot');
                           setActiveTab('stats30m');
                         }}
-                        className="text-[11px] font-sans font-semibold text-cyan-600 hover:text-cyan-800 whitespace-nowrap shrink-0"
+                        className="text-[11px] font-sans font-medium text-sky-400 hover:text-sky-300 whitespace-nowrap shrink-0"
                       >
                         Статистика 30м →
                       </button>
@@ -576,42 +575,40 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   )}
                 </div>
 
-                <input
-                  type="checkbox"
-                  checked={bjConfig.enabled}
-                  onChange={(e) =>
-                    onUpdateBjConfig({
-                      ...bjConfig,
-                      enabled: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
-                />
+                <div className="pt-0.5">
+                  <ToggleSwitch
+                    checked={bjConfig.enabled}
+                    onChange={(enabled) =>
+                      onUpdateBjConfig({ ...bjConfig, enabled })
+                    }
+                    ariaLabel="Включить стратегию Bj Bot"
+                  />
+                </div>
               </div>
 
               {expandedStrategyInfo === 'bj_bot' && (
-                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
-                  <div className="font-semibold text-slate-900">
+                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-white/[0.06] bg-[#11151D] text-xs text-slate-300 space-y-2">
+                  <div className="font-semibold text-white">
                     Принцип работы (Трендовый бот + анти-флэт + безубыток):
                   </div>
-                  <p className="leading-relaxed text-slate-600">
-                    Отслеживает пересечение <strong>{bjConfig.maType1}({bjConfig.maLength1})</strong> и <strong>{bjConfig.maType2}({bjConfig.maLength2})</strong>, фильтруя входы против тренда 4h EMA 200 и в узком флэте (<code>BBW &lt; {(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%</code>). При прохождении +50% до TP присылает уведомление о переводе Stop Loss в безубыток.
+                  <p className="leading-relaxed text-slate-400">
+                    Отслеживает пересечение <strong className="text-slate-200">{bjConfig.maType1}({bjConfig.maLength1})</strong> и <strong className="text-slate-200">{bjConfig.maType2}({bjConfig.maLength2})</strong>, фильтруя входы против тренда 4h EMA 200 и в узком флэте (<code className="text-sky-300">BBW &lt; {(bjConfig.minBbWidth ?? 1.5).toFixed(1)}%</code>).
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#3b82f6] text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                      <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         LONG / SHORT
                       </span>
-                      <span>
-                        Вход по пересечению MA только вне флэта и по глобальному тренду 4h EMA 200 с авто-уровнями SL и TP (<code>R:R 1:{bjConfig.rnr}</code>).
+                      <span className="text-slate-300">
+                        Вход по тренду 4h EMA 200 с расчётными уровнями SL и TP (<code className="text-sky-300">R:R 1:{bjConfig.rnr}</code>).
                       </span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 rounded bg-[#a855f7] text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                      <span className="px-1.5 py-0.5 rounded bg-violet-500 text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         EXIT / BE
                       </span>
-                      <span>
-                        Авто-закрытие по TP/SL и алерт 🛡 Безубыток на +50% пути к цели.
+                      <span className="text-slate-300">
+                        Авто-закрытие по TP/SL и уведомление о безубытке на +50% пути к цели.
                       </span>
                     </div>
                   </div>
@@ -619,12 +616,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               )}
             </div>
 
-            {/* Стратегия №3: KEA-30m (Kalman-Entropy Alpha) */}
-            <div className="rounded-xl border border-slate-200 hover:border-fuchsia-400 transition-colors overflow-hidden">
-              <div className="flex items-center justify-between p-3.5 gap-2">
+            {/* Стратегия №3: KEA-30m */}
+            <div>
+              <div className="flex items-start justify-between p-3.5 gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-slate-950">
+                    <span className="text-sm font-semibold text-white">
                       3. KEA-30m (Kalman-Entropy)
                     </span>
                     <button
@@ -634,29 +631,31 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           expandedStrategyInfo === 'kea_alpha' ? null : 'kea_alpha'
                         )
                       }
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors shrink-0 ${
                         expandedStrategyInfo === 'kea_alpha'
-                          ? 'bg-slate-950 text-fuchsia-300'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-950'
+                          ? 'bg-[#222936] text-fuchsia-400'
+                          : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200'
                       }`}
                     >
                       <Info className="w-3 h-3" />
-                      <span>Как работает</span>
+                      <span>Детали</span>
                     </button>
                   </div>
-                  <div className="text-xs font-mono text-slate-500 mt-0.5">
+                  <div className="text-xs font-mono text-slate-400 mt-1">
                     ER({keaConfig.erPeriod}) ≥{keaConfig.erImpulseThreshold.toFixed(2)} · 24h VWAP Z ±{keaConfig.zScoreEntry.toFixed(1)} · SL ×{keaConfig.atrStopMult.toFixed(2)}
                   </div>
 
                   {activePairStats?.kea_alpha && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs font-mono tabular-nums">
-                      <span className="text-slate-600 font-sans">
-                        Успешность 30м ({assetInfo.baseAsset}):{' '}
-                        <strong className="font-mono text-emerald-600">
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-white/[0.05] text-xs font-mono tabular-nums">
+                      <span className="text-slate-400 font-sans">
+                        30м ({assetInfo.baseAsset}):{' '}
+                        <strong className="font-mono text-emerald-400">
                           {activePairStats.kea_alpha.winRate.toFixed(1)}%
                         </strong>{' '}
-                        ({activePairStats.kea_alpha.winningTrades}W /{' '}
-                        {activePairStats.kea_alpha.losingTrades}L)
+                        <span className="text-slate-500">
+                          ({activePairStats.kea_alpha.winningTrades}W /{' '}
+                          {activePairStats.kea_alpha.losingTrades}L)
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -664,7 +663,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           setSelectedStatsStrategy('kea_alpha');
                           setActiveTab('stats30m');
                         }}
-                        className="text-[11px] font-sans font-semibold text-fuchsia-600 hover:text-fuchsia-800 whitespace-nowrap shrink-0"
+                        className="text-[11px] font-sans font-medium text-fuchsia-400 hover:text-fuchsia-300 whitespace-nowrap shrink-0"
                       >
                         Статистика 30м →
                       </button>
@@ -672,42 +671,41 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   )}
                 </div>
 
-                <input
-                  type="checkbox"
-                  checked={keaConfig.enabled}
-                  onChange={(e) =>
-                    onUpdateKeaConfig({
-                      ...keaConfig,
-                      enabled: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 accent-fuchsia-500 rounded cursor-pointer shrink-0"
-                />
+                <div className="pt-0.5">
+                  <ToggleSwitch
+                    checked={keaConfig.enabled}
+                    onChange={(enabled) =>
+                      onUpdateKeaConfig({ ...keaConfig, enabled })
+                    }
+                    accent="fuchsia"
+                    ariaLabel="Включить стратегию KEA-30m"
+                  />
+                </div>
               </div>
 
               {expandedStrategyInfo === 'kea_alpha' && (
-                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 bg-slate-50/80 text-xs text-slate-700 space-y-2">
-                  <div className="font-semibold text-slate-900">
+                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-white/[0.06] bg-[#11151D] text-xs text-slate-300 space-y-2">
+                  <div className="font-semibold text-white">
                     Математическое ядро для 30м (Адаптивный Калман + Энтропия):
                   </div>
-                  <p className="leading-relaxed text-slate-600">
-                    Коэффициент фрактальной эффективности Кауфмана (<code>ER</code>) измеряет отношение направленного смещения цены к суммарному шуму и в реальном времени меняет коэффициент усиления 1D фильтра Калмана и режим торговли.
+                  <p className="leading-relaxed text-slate-400">
+                    Коэффициент фрактальной эффективности Кауфмана (<code className="text-fuchsia-300">ER</code>) измеряет отношение направленного смещения к шуму и переключает режим торговли в реальном времени.
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-start gap-2">
                       <span className="px-1.5 py-0.5 rounded bg-fuchsia-600 text-white font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         IMPULSE
                       </span>
-                      <span>
-                        <strong>Режим A (ER ≥ {keaConfig.erImpulseThreshold.toFixed(2)}):</strong> пробой линии Калмана после сжатия волатильности Гармана–Класса (<code>GK Ratio</code>) по тренду 4h EMA 200 со скользящим трейлинг-стопом после +{keaConfig.trailAfterR.toFixed(1)}R.
+                      <span className="text-slate-300">
+                        <strong className="text-white">Режим A (ER ≥ {keaConfig.erImpulseThreshold.toFixed(2)}):</strong> пробой линии Калмана после сжатия Гармана–Класса со скользящим трейлинг-стопом после +{keaConfig.trailAfterR.toFixed(1)}R.
                       </span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-bold text-[10px] shrink-0 mt-0.5">
                         Z-REVERT
                       </span>
-                      <span>
-                        <strong>Режим B (ER ≤ {keaConfig.erRevertThreshold.toFixed(2)}):</strong> статистический возврат к 24ч Rolling VWAP при экстремальном объёмном <code>|Z| ≥ {keaConfig.zScoreEntry.toFixed(1)}</code> и разворотной свече.
+                      <span className="text-slate-300">
+                        <strong className="text-white">Режим B (ER ≤ {keaConfig.erRevertThreshold.toFixed(2)}):</strong> возврат к 24ч Rolling VWAP при объёмном <code className="text-amber-300">|Z| ≥ {keaConfig.zScoreEntry.toFixed(1)}</code>.
                       </span>
                     </div>
                   </div>
@@ -717,27 +715,27 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </div>
         )}
 
-        {/* ВКЛАДКА 2: СТАТИСТИКА УСПЕШНОСТИ СДЕЛОК (30 МИН) ДЛЯ КАЖДОЙ ВАЛЮТЫ И КАЖДОЙ СТРАТЕГИИ */}
+        {/* ВКЛАДКА 2: СТАТИСТИКА 30М */}
         {activeTab === 'stats30m' && (
           <div className="flex flex-col space-y-3.5">
             {/* 1. Выбор криптовалюты */}
             <div>
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
-                <span>1. Выберите валюту (30 мин)</span>
-                <span className="font-mono text-slate-900 font-bold">
+              <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 mb-1.5">
+                <span>1. Валюта (30м)</span>
+                <span className="font-mono text-slate-200 font-semibold">
                   {assetInfo.baseAsset}/USDT
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1 p-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg">
                 {CRYPTO_ASSETS.map((a) => (
                   <button
                     key={a.symbol}
                     type="button"
                     onClick={() => onSelectSymbol(a.symbol)}
-                    className={`py-2 sm:py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap ${
+                    className={`py-1.5 px-2 rounded-md text-xs font-mono font-medium transition-colors whitespace-nowrap ${
                       symbol === a.symbol
-                        ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-950'
+                        ? 'bg-[#222936] text-white font-semibold'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                     }`}
                   >
                     {a.baseAsset}
@@ -748,17 +746,17 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
             {/* 2. Выбор стратегии */}
             <div>
-              <div className="text-[11px] font-semibold text-slate-500 mb-1.5">
-                2. Выберите стратегию
+              <div className="text-[11px] font-medium text-slate-400 mb-1.5">
+                2. Стратегия
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg">
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('rsi_bb')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
                     selectedStatsStrategy === 'rsi_bb'
-                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      ? 'bg-[#222936] text-white font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   1. RSI+BB
@@ -766,10 +764,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('bj_bot')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
                     selectedStatsStrategy === 'bj_bot'
-                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      ? 'bg-[#222936] text-white font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   2. Bj Bot
@@ -777,10 +775,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('kea_alpha')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
                     selectedStatsStrategy === 'kea_alpha'
-                      ? 'bg-slate-950 text-fuchsia-300 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      ? 'bg-[#222936] text-fuchsia-300 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   3. KEA-30m
@@ -788,10 +786,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedStatsStrategy('both')}
-                  className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                  className={`py-1.5 px-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
                     selectedStatsStrategy === 'both'
-                      ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      ? 'bg-[#222936] text-white font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Все 3
@@ -799,30 +797,27 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             </div>
 
-            {/* 3. Карточка показателей успешности за 30 мин */}
+            {/* 3. KPI карточка */}
             {selectedStatsStrategy !== 'both' && currentSingleStats && (
-              <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/60 space-y-3">
+              <div className="rounded-xl border border-white/[0.07] p-3.5 bg-[#0B0E14] space-y-3">
                 <div className="flex items-baseline justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-xs font-bold text-slate-900 truncate">
+                    <div className="text-xs font-semibold text-white truncate">
                       {currentSingleStats.baseAsset}/USDT · {currentSingleStats.strategyTitle}
                     </div>
-                    <div className="text-[11px] text-slate-500">
-                      Интервал 30м · Сделок: {currentSingleStats.totalTrades}
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Таймфрейм 30м · Сделок: {currentSingleStats.totalTrades}
                     </div>
                   </div>
                   <div className="text-right font-mono tabular-nums shrink-0">
-                    <div className="text-xl font-bold text-emerald-600">
+                    <div className="text-xl font-semibold text-emerald-400">
                       {currentSingleStats.winRate.toFixed(1)}%
                     </div>
-                    <div className="text-[10px] text-slate-400 font-sans">
-                      Успешность
-                    </div>
+                    <div className="text-[10px] text-slate-500 font-sans">Win Rate</div>
                   </div>
                 </div>
 
-                {/* Полоса соотношения успешных / убыточных сделок */}
-                <div className="w-full h-2.5 bg-rose-200 rounded-full overflow-hidden flex">
+                <div className="w-full h-1.5 bg-rose-500/30 rounded-full overflow-hidden flex">
                   <div
                     className="h-full bg-emerald-500 transition-all duration-300"
                     style={{
@@ -833,13 +828,13 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-2 pt-1 text-xs font-mono tabular-nums">
                   <div>
-                    <div className="text-[10px] font-sans text-slate-400">Побед / Убыт</div>
-                    <div className="font-bold text-slate-900 mt-0.5">
-                      <span className="text-emerald-600">
+                    <div className="text-[10px] font-sans text-slate-400">W / L</div>
+                    <div className="font-semibold text-slate-100 mt-0.5">
+                      <span className="text-emerald-400">
                         {currentSingleStats.winningTrades}W
                       </span>{' '}
                       /{' '}
-                      <span className="text-rose-600">
+                      <span className="text-rose-400">
                         {currentSingleStats.losingTrades}L
                       </span>
                     </div>
@@ -847,10 +842,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   <div>
                     <div className="text-[10px] font-sans text-slate-400">Сумм. PnL</div>
                     <div
-                      className={`font-bold mt-0.5 ${
+                      className={`font-semibold mt-0.5 ${
                         currentSingleStats.totalPnlPercent >= 0
-                          ? 'text-emerald-600'
-                          : 'text-rose-600'
+                          ? 'text-emerald-400'
+                          : 'text-rose-400'
                       }`}
                     >
                       {currentSingleStats.totalPnlPercent >= 0 ? '+' : ''}
@@ -859,13 +854,13 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   </div>
                   <div>
                     <div className="text-[10px] font-sans text-slate-400">Профит-факт.</div>
-                    <div className="font-bold text-slate-900 mt-0.5">
+                    <div className="font-semibold text-slate-100 mt-0.5">
                       {currentSingleStats.profitFactor.toFixed(2)}
                     </div>
                   </div>
                   <div>
                     <div className="text-[10px] font-sans text-slate-400">Ср. W / L</div>
-                    <div className="font-bold text-slate-900 mt-0.5">
+                    <div className="font-semibold text-slate-100 mt-0.5">
                       +{currentSingleStats.avgWinPercent.toFixed(1)}% /{' '}
                       {currentSingleStats.avgLossPercent.toFixed(1)}%
                     </div>
@@ -874,9 +869,9 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             )}
 
-            {/* Режим сравнения всех стратегий для выбранной валюты */}
+            {/* Сравнение всех 3 стратегий */}
             {selectedStatsStrategy === 'both' && activePairStats && (
-              <div className="grid grid-cols-1 gap-2">
+              <div className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.07] bg-[#0B0E14] overflow-hidden">
                 {[
                   activePairStats.rsi_bb,
                   activePairStats.bj_bot,
@@ -884,26 +879,26 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 ].map((st) => (
                   <div
                     key={st.strategyId}
-                    className="rounded-xl border border-slate-200 p-3 bg-slate-50/60 font-mono tabular-nums flex items-center justify-between gap-3"
+                    className="p-3 font-mono tabular-nums flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <div className="text-xs font-sans font-bold text-slate-900 truncate">
+                      <div className="text-xs font-sans font-semibold text-white truncate">
                         {st.strategyTitle}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
+                      <div className="text-[11px] text-slate-400 mt-0.5">
                         {st.winningTrades}W / {st.losingTrades}L · PF{' '}
-                        <span className="text-slate-800 font-semibold">
+                        <span className="text-slate-200 font-medium">
                           {st.profitFactor.toFixed(2)}
                         </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-base font-bold text-emerald-600">
+                      <div className="text-base font-semibold text-emerald-400">
                         {st.winRate.toFixed(1)}%
                       </div>
                       <div
-                        className={`text-[11px] font-bold ${
-                          st.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        className={`text-[11px] font-medium ${
+                          st.totalPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
                         }`}
                       >
                         {st.totalPnlPercent >= 0 ? '+' : ''}
@@ -915,136 +910,126 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             )}
 
-            {/* 4. Переключатель: Сводная таблица всех валют (30м) ИЛИ История сделок выбранной монеты */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setStatsSubView('all_coins')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                    statsSubView === 'all_coins'
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  Все валюты (30м)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatsSubView('trades')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                    statsSubView === 'trades'
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  Сделки {assetInfo.baseAsset} (30м)
-                </button>
-              </div>
+            {/* 4. Таблица валют или история сделок */}
+            <div className="flex items-center gap-1 border-b border-white/[0.06] pb-2">
+              <button
+                type="button"
+                onClick={() => setStatsSubView('all_coins')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  statsSubView === 'all_coins'
+                    ? 'bg-[#222936] text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Все валюты (30м)
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatsSubView('trades')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  statsSubView === 'trades'
+                    ? 'bg-[#222936] text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Сделки {assetInfo.baseAsset} (30м)
+              </button>
             </div>
 
             {statsSubView === 'all_coins' ? (
-              <div className="divide-y divide-slate-100 max-h-[250px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
-                {CRYPTO_ASSETS.map((a) => {
-                  const row = stats30mBySymbol[a.symbol];
-                  if (!row) return null;
-                  const r = row.rsi_bb;
-                  const b = row.bj_bot;
-                  const k = row.kea_alpha;
-                  const isSelected = a.symbol === symbol;
+              <div className="rounded-xl border border-white/[0.07] bg-[#0B0E14] overflow-hidden">
+                <div className="grid grid-cols-4 gap-2 px-3 py-2 border-b border-white/[0.06] text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                  <span>Пара</span>
+                  <span>RSI+BB</span>
+                  <span>Bj Bot</span>
+                  <span className="text-fuchsia-400">KEA-30m</span>
+                </div>
+                <div className="divide-y divide-white/[0.05] max-h-[240px] overflow-y-auto text-xs font-mono tabular-nums">
+                  {CRYPTO_ASSETS.map((a) => {
+                    const row = stats30mBySymbol[a.symbol];
+                    if (!row) return null;
+                    const r = row.rsi_bb;
+                    const b = row.bj_bot;
+                    const k = row.kea_alpha;
+                    const isSelected = a.symbol === symbol;
 
-                  return (
-                    <button
-                      key={a.symbol}
-                      type="button"
-                      onClick={() => onSelectSymbol(a.symbol)}
-                      className={`w-full py-2.5 px-2 flex flex-col gap-1 rounded-lg transition-colors text-left ${
-                        isSelected ? 'bg-cyan-50/90' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-950">
-                          {a.baseAsset}/USDT
+                    return (
+                      <button
+                        key={a.symbol}
+                        type="button"
+                        onClick={() => onSelectSymbol(a.symbol)}
+                        className={`w-full py-2 px-3 grid grid-cols-4 gap-2 items-center transition-colors text-left ${
+                          isSelected ? 'bg-[#171C26]' : 'hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        <span className="font-semibold text-white">
+                          {a.baseAsset}
                         </span>
-                        <span className="text-[10px] font-sans text-slate-400">
-                          30м Win Rate · PnL
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                         <div>
-                          <div className="text-[10px] font-sans text-slate-400">RSI+BB</div>
-                          <span className="font-bold text-slate-900">
-                            {r.winRate.toFixed(0)}%
-                          </span>{' '}
-                          <span
-                            className={
-                              r.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }
+                          <div className="text-slate-200 font-medium">{r.winRate.toFixed(0)}%</div>
+                          <div
+                            className={`text-[10px] ${
+                              r.totalPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
                           >
                             {r.totalPnlPercent >= 0 ? '+' : ''}
                             {r.totalPnlPercent.toFixed(1)}%
-                          </span>
+                          </div>
                         </div>
                         <div>
-                          <div className="text-[10px] font-sans text-slate-400">Bj Bot</div>
-                          <span className="font-bold text-slate-900">
-                            {b.winRate.toFixed(0)}%
-                          </span>{' '}
-                          <span
-                            className={
-                              b.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }
+                          <div className="text-slate-200 font-medium">{b.winRate.toFixed(0)}%</div>
+                          <div
+                            className={`text-[10px] ${
+                              b.totalPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
                           >
                             {b.totalPnlPercent >= 0 ? '+' : ''}
                             {b.totalPnlPercent.toFixed(1)}%
-                          </span>
+                          </div>
                         </div>
                         <div>
-                          <div className="text-[10px] font-sans text-fuchsia-600 font-semibold">
-                            KEA-30m
-                          </div>
                           {k ? (
                             <>
-                              <span className="font-bold text-slate-900">
+                              <div className="text-slate-200 font-medium">
                                 {k.winRate.toFixed(0)}%
-                              </span>{' '}
-                              <span
-                                className={
-                                  k.totalPnlPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                                }
+                              </div>
+                              <div
+                                className={`text-[10px] ${
+                                  k.totalPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
                               >
                                 {k.totalPnlPercent >= 0 ? '+' : ''}
                                 {k.totalPnlPercent.toFixed(1)}%
-                              </span>
+                              </div>
                             </>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-slate-500">—</span>
                           )}
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[250px] overflow-y-auto pr-1 text-xs font-mono tabular-nums">
+              <div className="divide-y divide-white/[0.05] rounded-xl border border-white/[0.07] bg-[#0B0E14] max-h-[260px] overflow-y-auto text-xs font-mono tabular-nums">
                 {(currentSingleStats?.trades || []).slice(0, 20).map((t) => (
                   <div
                     key={t.id}
-                    className="py-2.5 px-1.5 flex items-center justify-between gap-2"
+                    className="py-2.5 px-3 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                             t.direction === 'LONG'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-amber-500 text-slate-950'
+                              ? 'bg-emerald-500/15 text-emerald-400'
+                              : 'bg-rose-500/15 text-rose-400'
                           }`}
                         >
                           {t.direction}
                         </span>
-                        <span className="text-slate-900 font-semibold">
+                        <span className="text-slate-200 font-medium">
                           ${formatCryptoPrice(t.entryPrice, symbol)} → $
                           {formatCryptoPrice(t.exitPrice, symbol)}
                         </span>
@@ -1052,7 +1037,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           ({t.exitReason})
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
+                      <div className="text-[10px] text-slate-500 mt-0.5">
                         {new Date(t.exitTimestamp).toLocaleString('ru-RU', {
                           day: '2-digit',
                           month: '2-digit',
@@ -1063,8 +1048,8 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     </div>
 
                     <div
-                      className={`font-bold shrink-0 ${
-                        t.isWin ? 'text-emerald-600' : 'text-rose-600'
+                      className={`font-semibold shrink-0 ${
+                        t.isWin ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
                       {t.pnlPercent >= 0 ? '+' : ''}
@@ -1075,16 +1060,16 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
             )}
 
-            {/* 5. Кнопки отправки статистики и интерактивного меню выбора в Telegram */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+            {/* 5. Экспорт в Telegram */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
               <button
                 type="button"
                 onClick={onSendTelegramStatsMenu}
                 disabled={isSendingTelegram}
-                className="py-2.5 sm:py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                className="py-2 px-3 rounded-lg bg-[#171C26] hover:bg-[#1E2532] border border-white/[0.1] disabled:opacity-50 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
               >
-                <Send className="w-3.5 h-3.5 shrink-0" />
-                <span>Кнопка выбора в ТГ</span>
+                <Send className="w-3.5 h-3.5 shrink-0 text-sky-400" />
+                <span>Меню выбора в ТГ</span>
               </button>
 
               <button
@@ -1093,7 +1078,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                   onSendSelectedStatsTelegram(symbol, selectedStatsStrategy)
                 }
                 disabled={isSendingTelegram}
-                className="py-2.5 sm:py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                className="py-2 px-3 rounded-lg bg-slate-100 hover:bg-white disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
               >
                 <TrendingUp className="w-3.5 h-3.5 shrink-0" />
                 <span>Отчет {assetInfo.baseAsset} в ТГ</span>
@@ -1102,17 +1087,18 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </div>
         )}
 
-        {/* ВКЛАДКА 3: Настройка Telegram-Бота */}
+        {/* ВКЛАДКА 3: TELEGRAM-БОТ */}
         {activeTab === 'telegram' && (
           <div className="space-y-4 flex flex-col justify-between">
             <div className="space-y-3.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-slate-900">
-                  Уведомления и кнопки в Telegram
+                <span className="text-xs font-semibold text-white">
+                  Уведомления и меню в Telegram
                 </span>
                 <button
+                  type="button"
                   onClick={() => setShowTgHelp(!showTgHelp)}
-                  className="text-xs font-medium text-cyan-600 hover:text-cyan-700 flex items-center gap-1 shrink-0"
+                  className="text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 shrink-0"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                   <span>Инструкция</span>
@@ -1120,16 +1106,24 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               </div>
 
               {showTgHelp && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-                  <div>1. Создайте бота в <strong>@BotFather</strong> и скопируйте <strong>Token</strong>.</div>
-                  <div>2. Нажмите <code>/start</code> в диалоге с вашим ботом.</div>
-                  <div>3. Узнайте ваш <strong>Chat ID</strong> через <strong>@userinfobot</strong>.</div>
-                  <div>4. В боте появятся 4 кнопки: <strong>Статистика</strong>, <strong>Топ связок</strong>, <strong>Статус 4h</strong> и <strong>Фильтр</strong>.</div>
+                <div className="bg-[#0B0E14] border border-white/[0.08] rounded-xl p-3 text-xs text-slate-400 space-y-1">
+                  <div>
+                    1. Создайте бота в <strong className="text-slate-200">@BotFather</strong> и скопируйте <strong className="text-slate-200">Token</strong>.
+                  </div>
+                  <div>
+                    2. Нажмите <code className="text-sky-300">/start</code> в диалоге с вашим ботом.
+                  </div>
+                  <div>
+                    3. Узнайте <strong className="text-slate-200">Chat ID</strong> через <strong className="text-slate-200">@userinfobot</strong>.
+                  </div>
+                  <div>
+                    4. В боте появятся 4 кнопки: <strong className="text-slate-200">Статистика</strong>, <strong className="text-slate-200">Топ связок</strong>, <strong className="text-slate-200">Статус 4h</strong> и <strong className="text-slate-200">Фильтр</strong>.
+                  </div>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   Bot Token (от @BotFather)
                 </label>
                 <input
@@ -1142,12 +1136,12 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     })
                   }
                   placeholder="1234567890:AAHxyz..."
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-cyan-500 focus:bg-white rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none transition-colors"
+                  className="w-full bg-[#0B0E14] border border-white/[0.1] focus:border-sky-400 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   Ваш Chat ID
                 </label>
                 <input
@@ -1160,15 +1154,15 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                     })
                   }
                   placeholder="Например: 482910492"
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-cyan-500 focus:bg-white rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none transition-colors"
+                  className="w-full bg-[#0B0E14] border border-white/[0.1] focus:border-sky-400 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Минимальная сила сигнала для ТГ (Confluence)
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Минимальная сила сигнала (Confluence)
                 </label>
-                <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-[#0B0E14] border border-white/[0.07] rounded-lg">
                   {([
                     { score: 1 as const, label: 'Все 1/3+' },
                     { score: 2 as const, label: 'От 2/3' },
@@ -1183,10 +1177,10 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                           minConfluenceScore: opt.score,
                         })
                       }
-                      className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+                      className={`py-1.5 px-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
                         (telegramConfig.minConfluenceScore ?? 1) === opt.score
-                          ? 'bg-slate-950 text-cyan-300 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-950'
+                          ? 'bg-[#222936] text-white font-semibold'
+                          : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
                       {opt.label}
@@ -1195,46 +1189,40 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                 </div>
               </div>
 
-              <label className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 cursor-pointer">
-                <div className="text-xs font-semibold text-slate-800">
-                  Авто-уведомление по всем криптовалютам
+              <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-200">
+                    Авто-уведомления по всем 8 монетам
+                  </span>
+                  <ToggleSwitch
+                    checked={telegramConfig.autoNotify}
+                    onChange={(autoNotify) =>
+                      onUpdateTelegram({ ...telegramConfig, autoNotify })
+                    }
+                    ariaLabel="Включить авто-уведомления по всем криптовалютам"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={telegramConfig.autoNotify}
-                  onChange={(e) =>
-                    onUpdateTelegram({
-                      ...telegramConfig,
-                      autoNotify: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
-                />
-              </label>
 
-              <label className="flex items-center justify-between gap-2 pt-1 cursor-pointer">
-                <div className="text-xs font-semibold text-slate-800">
-                  Алерт безубытка Bj Bot (+50% до TP)
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-200">
+                    Алерт безубытка Bj Bot (+50% до TP)
+                  </span>
+                  <ToggleSwitch
+                    checked={telegramConfig.notifyBreakeven ?? true}
+                    onChange={(notifyBreakeven) =>
+                      onUpdateTelegram({ ...telegramConfig, notifyBreakeven })
+                    }
+                    ariaLabel="Включить алерт безубытка Bj Bot"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={telegramConfig.notifyBreakeven ?? true}
-                  onChange={(e) =>
-                    onUpdateTelegram({
-                      ...telegramConfig,
-                      notifyBreakeven: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer shrink-0"
-                />
-              </label>
+              </div>
 
               {telegramFeedback && (
                 <div
-                  className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
+                  className={`p-3 rounded-lg text-xs flex items-start gap-2 border ${
                     telegramFeedback.type === 'success'
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+                      : 'bg-rose-500/10 text-rose-300 border-rose-500/25'
                   }`}
                 >
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1243,30 +1231,33 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
               )}
             </div>
 
-            <div className="space-y-2 pt-3 border-t border-slate-100">
+            <div className="space-y-2 pt-3 border-t border-white/[0.06]">
               <button
+                type="button"
                 onClick={onSendTelegramStatsMenu}
                 disabled={isSendingTelegram}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                className="w-full py-2.5 px-4 rounded-lg bg-[#171C26] hover:bg-[#1E2532] border border-white/[0.1] disabled:opacity-50 text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
               >
-                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
-                <span>📊 Меню статистики (30м) в ТГ</span>
+                <TrendingUp className="w-3.5 h-3.5 shrink-0 text-sky-400" />
+                <span>Отправить меню статистики (30м) в ТГ</span>
               </button>
 
               <div className="grid grid-cols-2 gap-2">
                 <button
+                  type="button"
                   onClick={onSendTestTelegram}
                   disabled={isSendingTelegram}
-                  className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                  className="py-2 px-3 rounded-lg bg-[#0B0E14] hover:bg-[#171C26] border border-white/[0.1] disabled:opacity-50 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                 >
                   <Send className="w-3.5 h-3.5 shrink-0" />
                   <span>Тест бота</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={onSendManualSummaryTelegram}
                   disabled={isSendingTelegram}
-                  className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                  className="py-2 px-3 rounded-lg bg-slate-100 hover:bg-white disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                 >
                   <Bell className="w-3.5 h-3.5 shrink-0" />
                   <span>Сводка в ТГ</span>
@@ -1276,49 +1267,49 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
           </div>
         )}
 
-        {/* ВКЛАДКА 4: Максимум 50 последних сигналов по всем криптовалютам */}
+        {/* ВКЛАДКА 4: ПОСЛЕДНИЕ СИГНАЛЫ */}
         {activeTab === 'signals' && (
           <div className="flex flex-col">
             {latest50Signals.length === 0 ? (
-              <div className="text-center py-10 text-xs text-slate-400">
+              <div className="text-center py-10 text-xs text-slate-500">
                 На выбранном интервале ({timeframe}) сигналов не найдено.
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto pr-1">
+              <div className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.07] bg-[#0B0E14] max-h-[390px] overflow-y-auto">
                 {latest50Signals.map((sig) => {
                   let badgeLabel = 'BUY';
-                  let badgeStyle = 'bg-[#00f0ff] text-slate-950';
+                  let badgeStyle = 'bg-sky-500/15 text-sky-400';
 
                   if (sig.type === 'OVERSOLD_BUY') {
                     badgeLabel = 'BUY';
-                    badgeStyle = 'bg-[#00f0ff] text-slate-950';
+                    badgeStyle = 'bg-sky-500/15 text-sky-400';
                   } else if (sig.type === 'OVERBOUGHT_SELL') {
                     badgeLabel = 'SELL';
-                    badgeStyle = 'bg-[#f43f5e] text-white';
+                    badgeStyle = 'bg-rose-500/15 text-rose-400';
                   } else if (sig.type === 'LONG') {
                     badgeLabel = 'LONG';
-                    badgeStyle = 'bg-[#3b82f6] text-white';
+                    badgeStyle = 'bg-blue-500/15 text-blue-400';
                   } else if (sig.type === 'SHORT') {
                     badgeLabel = 'SHORT';
-                    badgeStyle = 'bg-[#f59e0b] text-slate-950';
+                    badgeStyle = 'bg-amber-500/15 text-amber-400';
                   } else if (sig.type === 'L EXIT') {
                     badgeLabel = 'L EXIT';
-                    badgeStyle = 'bg-[#a855f7] text-white';
+                    badgeStyle = 'bg-violet-500/15 text-violet-400';
                   } else if (sig.type === 'S EXIT') {
                     badgeLabel = 'S EXIT';
-                    badgeStyle = 'bg-[#14b8a6] text-slate-950';
+                    badgeStyle = 'bg-teal-500/15 text-teal-400';
                   } else if (sig.type === 'BREAKEVEN') {
                     badgeLabel = 'BE 50%';
-                    badgeStyle = 'bg-emerald-600 text-white';
+                    badgeStyle = 'bg-emerald-500/15 text-emerald-400';
                   } else if (sig.type === 'KEA LONG') {
                     badgeLabel = 'KEA LONG';
-                    badgeStyle = 'bg-fuchsia-600 text-white';
+                    badgeStyle = 'bg-fuchsia-500/15 text-fuchsia-400';
                   } else if (sig.type === 'KEA SHORT') {
                     badgeLabel = 'KEA SHORT';
-                    badgeStyle = 'bg-pink-600 text-white';
+                    badgeStyle = 'bg-pink-500/15 text-pink-400';
                   } else if (sig.type === 'KEA EXIT') {
                     badgeLabel = 'KEA EXIT';
-                    badgeStyle = 'bg-yellow-400 text-slate-950';
+                    badgeStyle = 'bg-yellow-500/15 text-yellow-300';
                   }
 
                   const scoreText =
@@ -1329,27 +1320,38 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       : '1/3';
                   const scoreColor =
                     sig.confluenceScore === 3
-                      ? 'text-amber-600 font-bold'
+                      ? 'text-amber-400 font-semibold'
                       : sig.confluenceScore === 2
-                      ? 'text-cyan-700 font-semibold'
-                      : 'text-slate-400';
+                      ? 'text-sky-400 font-medium'
+                      : 'text-slate-500';
+
+                  const refPrice = sig.entryPrice || sig.price;
+                  const tpPct =
+                    sig.targetPrice && refPrice > 0
+                      ? ((sig.targetPrice - refPrice) / refPrice) * 100
+                      : null;
+                  const slPct =
+                    sig.stopPrice && refPrice > 0
+                      ? ((sig.stopPrice - refPrice) / refPrice) * 100
+                      : null;
 
                   return (
                     <button
                       key={sig.id}
+                      type="button"
                       onClick={() => onSelectSymbol(sig.symbol)}
-                      className="w-full py-2.5 px-1.5 hover:bg-slate-50 rounded-lg flex items-center justify-between text-xs font-mono tabular-nums text-left transition-colors"
+                      className="w-full py-2.5 px-3 hover:bg-white/[0.03] flex items-start justify-between gap-2 text-xs font-mono tabular-nums text-left transition-colors"
                     >
-                      <div>
+                      <div className="min-w-0 space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-slate-950">
+                          <span className="font-semibold text-white">
                             {sig.baseAsset}/USDT
                           </span>
-                          <span className="text-[10px] font-sans font-semibold text-slate-500">
+                          <span className="text-[10px] font-sans font-medium text-slate-400">
                             {sig.strategyName}
                           </span>
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeStyle}`}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeStyle}`}
                           >
                             {badgeLabel}
                           </span>
@@ -1358,32 +1360,47 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                               {scoreText}
                             </span>
                           )}
-                          <span className="text-slate-900 font-semibold">
-                            ${formatCryptoPrice(sig.price, sig.symbol)}
+                          <span className="text-slate-100 font-semibold">
+                            Вход ${formatCryptoPrice(sig.price, sig.symbol)}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
+
+                        {(sig.targetPrice || sig.stopPrice) && (
+                          <div className="flex items-center gap-2.5 flex-wrap text-[11px]">
+                            {sig.targetPrice && (
+                              <span className="text-emerald-400 font-medium">
+                                TP ${formatCryptoPrice(sig.targetPrice, sig.symbol)}
+                                {tpPct !== null && (
+                                  <span className="text-emerald-400/75 text-[10px] ml-0.5">
+                                    ({tpPct >= 0 ? '+' : ''}
+                                    {tpPct.toFixed(1)}%)
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            {sig.stopPrice && (
+                              <span className="text-rose-400 font-medium">
+                                SL ${formatCryptoPrice(sig.stopPrice, sig.symbol)}
+                                {slPct !== null && (
+                                  <span className="text-rose-400/75 text-[10px] ml-0.5">
+                                    ({slPct >= 0 ? '+' : ''}
+                                    {slPct.toFixed(1)}%)
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-slate-500">
                           {sig.strategyName === 'KEA-30m' ? (
                             <>
-                              {sig.keaMode === 'Z_REVERT' ? 'VWAP Z' : 'Импульс'} · ER{' '}
-                              {(sig.erValue ?? 0).toFixed(2)} · Z{' '}
-                              {(sig.zScore ?? 0) >= 0 ? '+' : ''}
-                              {(sig.zScore ?? 0).toFixed(2)} ·{' '}
+                              {sig.keaMode === 'Z_REVERT' ? 'Возврат к VWAP' : 'Импульс'} ·{' '}
                             </>
-                          ) : sig.strategyName === 'Bj Bot' && sig.stopPrice ? (
-                            <>
-                              SL ${formatCryptoPrice(sig.stopPrice, sig.symbol)}
-                              {sig.targetPrice
-                                ? ` · TP $${formatCryptoPrice(sig.targetPrice, sig.symbol)}`
-                                : ''}{' '}
-                              ·{' '}
-                            </>
-                          ) : (
-                            <>
-                              RSI {sig.rsiValue.toFixed(1)} · %B{' '}
-                              {(sig.percentB * 100).toFixed(0)}% ·{' '}
-                            </>
-                          )}
+                          ) : sig.strategyName === 'RSI+BB' ? (
+                            <>RSI {sig.rsiValue.toFixed(1)} · </>
+                          ) : null}
+                          {sig.timeframe} ·{' '}
                           {new Date(sig.candleTimestamp).toLocaleString('ru-RU', {
                             day: '2-digit',
                             month: '2-digit',
@@ -1394,7 +1411,7 @@ export const RightControlPanel: React.FC<RightControlPanelProps> = ({
                       </div>
 
                       {sig.telegramSent && (
-                        <span className="text-[11px] font-sans font-semibold text-emerald-600 shrink-0">
+                        <span className="text-[10px] font-sans font-semibold text-emerald-400 shrink-0 mt-0.5">
                           В ТГ ✓
                         </span>
                       )}
